@@ -162,6 +162,10 @@ public:
   // Set all entries in the vector to 0.
   void zero();
 
+  //-----------------------------------------------------------------------
+  // Array tensor indexing functions
+  //-----------------------------------------------------------------------
+
   // index0 returns the integer representation of a number of bits set
   // to zero inserted into an arbitrary bit string.
   // Eg: for qubits 0,2 in a state k = ba ( ba = 00 => k=0, etc).
@@ -171,6 +175,9 @@ public:
   // ==> output = 297 = 100101001 (with 0's put into places 1 and 4).
   template<typename list_t>
   uint_t index0(const list_t &qubits_sorted, const uint_t k) const;
+
+  template<typename list_t>
+  uint_t index1(const list_t &qubits_sorted, const uint_t k) const;
 
   // Return a std::unique_ptr to an array of of 2^N in ints
   // each int corresponds to an N qubit bitstring for M-N qubit bits in state k,
@@ -196,6 +203,21 @@ public:
   // As above but returns a fixed sized array of of 2^N in ints
   template<size_t N>
   areg_t<1ULL << N> indexes(const areg_t<N> &qs, const areg_t<N> &qubits_sorted, const uint_t k) const;
+
+  // NEW
+  indexes_t control_indexes(const reg_t& target_qubits,
+                            const reg_t& control_qubits,
+                            const reg_t& qubits_sorted,
+                            const uint_t control_val,
+                            const uint_t k) const;
+
+  // As above but returns a fixed sized array of of 2^M in ints
+  template<size_t N>
+  areg_t<1ULL << N> control_indexes(const areg_t<N>& target_qubits,
+                                    const reg_t& control_qubits,
+                                    const reg_t& qubits_sorted,
+                                    const uint_t control_val,
+                                    const uint_t k) const;
 
   // State initialization of a component
   // Initialize the specified qubits to a desired statevector
@@ -716,6 +738,19 @@ uint_t QubitVector<data_t>::index0(const list_t &qubits_sorted, const uint_t k) 
 }
 
 template <typename data_t>
+template <typename list_t>
+uint_t QubitVector<data_t>::index1(const list_t &qubits_sorted, const uint_t k) const {
+  uint_t lowbits, retval = k;
+  for (size_t j = 0; j < qubits_sorted.size(); j++) {
+    lowbits = retval & MASKS[qubits_sorted[j]] | BITS[qubits_sorted[j]];
+    retval >>= qubits_sorted[j];
+    retval <<= qubits_sorted[j] + 1;
+    retval |= lowbits;
+  }
+  return retval;
+}
+
+template <typename data_t>
 template <size_t N>
 areg_t<1ULL << N> QubitVector<data_t>::indexes(const areg_t<N> &qs,
                                                const areg_t<N> &qubits_sorted,
@@ -747,6 +782,57 @@ indexes_t QubitVector<data_t>::indexes(const reg_t& qubits,
   }
   return ret;
 }
+
+template <typename data_t>
+indexes_t QubitVector<data_t>::control_indexes(const reg_t& target_qubits,
+                                               const reg_t& control_qubits,
+                                               const reg_t& qubits_sorted,
+                                               const uint_t control_val,
+                                               const uint_t k) const {
+  // Get index for all controls and targets set to 0
+  const auto N = target_qubits.size();
+  indexes_t ret(new uint_t[BITS[N]]);
+  ret[0] = index0(qubits_sorted, k);
+  // Fix the value of the control qubits
+  for (size_t i = 0; i < control_qubits.size(); i++) {
+    ret[0] |= (control_val & BITS[i]) << control_qubits[i]);
+  }
+  // Set array values for target qubits
+  for (size_t i = 0; i < N; i++) {
+    n = BITS[i];
+    bit = BITS[target_qubits[i]]
+    for(size_t j=0; j<<n; j++) {
+        ret[n + j] = ret[j] | bit
+    }
+  }
+  return ret
+}
+
+template <typename data_t>
+template<size_t N>
+areg_t<1ULL<<N> QubitVector<data_t>::control_indexes(const areg_t<N>& target_qubits,
+                                                     const reg_t& control_qubits,
+                                                     const reg_t& qubits_sorted,
+                                                     const uint_t control_val,
+                                                     const uint_t k) const {
+  // Get index for all controls and targets set to 0
+  areg_t<1<<N> ret;
+  ret[0] = index0(qubits_sorted, k);
+  // Fix the value of the control qubits
+  for (size_t i = 0; i < control_qubits.size(); i++) {
+    ret[0] |= (control_val & BITS[i]) << control_qubits[i]);
+  }
+  // Set array values for target qubits
+  for(size_t i = 0; i < N; i++) {
+    n = BITS[i];
+    bit = BITS[targets[i]]
+    for(size_t j=0; j<<n; j++) {
+        ret[n + j] = ret[j] | bit
+    }
+  }
+  return ret
+}
+
 
 //------------------------------------------------------------------------------
 // State initialize component
@@ -993,6 +1079,44 @@ void QubitVector<data_t>::apply_lambda(Lambda&& func,
   }
 }
 
+//------------------------------------------------------------------------------
+// Controlled state update
+//------------------------------------------------------------------------------
+
+template <typename data_t>
+template<typename Lambda, typename list_t, typename Cond>
+void QubitVector<data_t>::apply_control_lambda(Lambda&& func,
+                                               const list_t& target_qubits,
+                                               const reg_t& control_qubits,
+                                               Cond&& block_cond) {
+  // Get sorted list of control + target qubits
+  const auto N_TARG = target_qubits.size();
+  const auto N_CTRL = control_qubits.size();
+  reg_t qubits_sorted;
+  qubits_sorted.reserve(N_TARG + N_CTRL);
+  qubits_sorted.insert(qubits_sorted.begin(), control_qubits.begin(), control_qubits.end());
+  qubits_sorted.insert(qubits_sorted.begin(), target_qubits.begin(), target_qubits.end());
+  std::sort(qubits_sorted.begin(), qubits_sorted.end());
+
+  // Get look size and block size
+  const int_t END = data_size_ >> N_TARG;
+  const int_t DIM_TARG = 1ULL << N_TARG;
+  const int_t DIM_CTRL = 1ULL << N_CTRL;
+#pragma omp parallel if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
+  {
+#pragma omp for
+    for (int_t k = 0; k < END; k++) {
+      // Separate into control block index and non-control block index
+      int_t i = k / DIM_CTRL;
+      int_t block = k % DIM_TARG;
+      // Check if block matrix is empty
+      if (std::forward<Lambda>(block_cond)(block)) {
+        const auto inds = control_indexes(target_qubits, control_qubits, qubits_sorted, block, k);
+        std::forward<Lambda>(func)(inds, block);
+      }
+    }
+  }
+}
 
 //------------------------------------------------------------------------------
 // Reduction Lambda
@@ -1235,6 +1359,54 @@ void QubitVector<data_t>::apply_matrix_sequence(const std::vector<reg_t> &regs,
 
   apply_matrix(sorted_qubits, U);
 }
+
+
+template <typename data_t>
+template<size_t N>
+void QubitVector<data_t>::apply_multiplexer(const areg_t<N>& target_qubits,
+                                            const reg_t& control_qubits,
+                                            const std::vector<cvector_t>& vmats) {
+  // Get sorted list of control + target qubits
+  reg_t qubits_sorted;
+  qubits_sorted.reserve(N + control_qubits.size());
+  qubits_sorted.insert(qubits_sorted.begin(), control_qubits.begin(), control_qubits.end());
+  qubits_sorted.insert(qubits_sorted.begin(), target_qubits.begin(), target_qubits.end());
+  std::sort(qubits_sorted.begin(), qubits_sorted.end());
+
+  // Get look size and block size
+  const int_t END = data_size_ >> N;
+  const int_t DIM_CONTROL = 1ULL << control_qubits.size();
+  const int_t DIM_TARGET = 1ULL << N;
+#pragma omp parallel if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
+  {
+#pragma omp for
+    for (int_t k = 0; k < END; k++) {
+      // Separate into control block index and non-control block index
+      int_t i = k / DIM_CONTROL;
+      int_t block = k % DIM_CONTORL;
+      // Check if block matrix is empty
+      if (!vmats[block].empty()) {
+
+        // Apply matrix multiplication on target block
+        const auto inds = control_indexes(target_qubits, control_qubits, qubits_sorted, block, k);
+        // Cache target block data
+        std::array<complex_t, DIM_TARGET> cache;
+        for (size_t i = 0; i < DIM_TARGET; i++) {
+          const auto ii = inds[i];
+          cache[i] = data_[ii];
+          data_[ii] = 0.;
+        }
+        // Apply matrix multiplication
+        for (size_t i = 0; i < DIM_TARGET; i++) {
+          for (size_t j = 0; j < DIM_TARGET; j++) {
+            data_[inds[i]] += vmats[block][i + DIM_TARGET * j] * cache[j];
+          }
+        }
+      }
+    }
+  }
+}
+
 
 template <typename data_t>
 void QubitVector<data_t>::apply_multiplexer(const reg_t &control_qubits,
