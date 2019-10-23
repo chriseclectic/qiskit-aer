@@ -556,29 +556,76 @@ void State<statevec_t>::snapshot_pauli_expval(const Operations::Op &op,
                                               SnapshotDataType type) {
   // Check empty edge case
   if (op.params_expval_pauli.empty()) {
-    throw std::invalid_argument("Invalid expval snapshot (Pauli components are empty).");
+    throw std::invalid_argument(
+        "Invalid expval snapshot (Pauli components are empty).");
+  }
+
+  // We remap the Pauli operators so that we don't need to revert the
+  // state after each term by exploiting the fact that we may undo the previous
+  // Pauli and apply the next in a single operation by adjusting the
+  // coefficients and operators Map for applying next Pauli term by undoing the
+  // previous term
+  const complex_t c1(1, 0);
+  const complex_t c1j(0, 1);
+  using param_map_t =
+      const std::unordered_map<char, std::pair<complex_t, char>>;
+  param_map_t Imap({{'I', {c1, 'I'}},
+                    {'X', {c1, 'X'}},
+                    {'Y', {c1, 'Y'}},
+                    {'Z', {c1, 'Z'}}});
+  param_map_t Xmap({{'I', {c1, 'X'}},
+                    {'X', {c1, 'I'}},
+                    {'Y', {-c1j, 'Z'}},
+                    {'Z', {c1j, 'Y'}}});
+  param_map_t Ymap({{'I', {c1, 'Y'}},
+                    {'X', {c1j, 'Z'}},
+                    {'Y', {c1, 'I'}},
+                    {'Z', {-c1j, 'X'}}});
+  param_map_t Zmap({{'I', {c1, 'Z'}},
+                    {'X', {-c1j, 'Y'}},
+                    {'Y', {c1j, 'X'}},
+                    {'Z', {c1, 'I'}}});
+  const std::unordered_map<char, param_map_t> next_param(
+      {{'I', Imap}, {'X', Xmap}, {'Y', Ymap}, {'Z', Zmap}});
+
+  std::vector<Operations::Op::pauli_component_t> remapped_params;
+  remapped_params.reserve(op.params_expval_pauli.size());
+
+  // Copy the first parameter over
+  remapped_params.push_back(op.params_expval_pauli[0]);
+  std::string previous = remapped_params[0].second;
+  size_t nq = previous.size();
+  // Now remp remaining params
+  complex_t running_coeff = 1.0;
+  for (auto it = op.params_expval_pauli.cbegin() + 1;
+       it != op.params_expval_pauli.cend(); it++) {
+    const complex_t &coeff = it->first;
+    const std::string &current = it->second;
+    std::string next_pauli;
+    for (size_t j = 0; j < nq; ++j) {
+      const auto pair = next_param.find(previous[j])->second.find(current[j]);
+      running_coeff *= pair->second.first;
+      next_pauli.push_back(pair->second.second);
+    }
+    remapped_params.emplace_back(running_coeff * coeff, next_pauli);
+    previous = current;
   }
 
   // Cache the current quantum state
   BaseState::qreg_.checkpoint();
-  bool first = true; // flag for first pass so we don't unnecessarily revert from checkpoint
 
   // Compute expval components
   complex_t expval(0., 0.);
-  for (const auto &param : op.params_expval_pauli) {
-    // Revert the quantum state to cached checkpoint
-    if (first)
-      first = false;
-    else
-      BaseState::qreg_.revert(true);
+  for (const auto &param : remapped_params) {
     // Apply each pauli operator as a gate to the corresponding qubit
     // qubits are stored as a list where position is qubit number:
     // eq op.qubits = [a, b, c], a is qubit-0, b is qubit-1, c is qubit-2
     // Pauli string labels are stored in little-endian ordering:
-    // eg label = "CBA", A is the Pauli for qubit-0, B for qubit-1, C for qubit-2
-    const auto& coeff = param.first;
-    const auto& pauli = param.second;
-    for (uint_t pos=0; pos < op.qubits.size(); ++pos) {
+    // eg label = "CBA", A is the Pauli for qubit-0, B for qubit-1, C for
+    // qubit-2
+    const auto &coeff = param.first;
+    const auto &pauli = param.second;
+    for (uint_t pos = 0; pos < op.qubits.size(); ++pos) {
       switch (pauli[pauli.size() - 1 - pos]) {
         case 'I':
           break;
@@ -593,25 +640,27 @@ void State<statevec_t>::snapshot_pauli_expval(const Operations::Op &op,
           break;
         default: {
           std::stringstream msg;
-          msg << "QubitVectorState::invalid Pauli string \'" << pauli[pos] << "\'.";
+          msg << "QubitVectorState::invalid Pauli string \'" << pauli[pos]
+              << "\'.";
           throw std::invalid_argument(msg.str());
         }
       }
     }
-    // Pauli expecation values should always be real for a valid state
-    // so we truncate the imaginary part
-    expval += coeff * std::real(BaseState::qreg_.inner_product());
+    // Since we are applying successive Paulis we need to keep the complex
+    // part of the inner product because the global phase is required in
+    // the expectation value calculation
+    expval += coeff * BaseState::qreg_.inner_product();
   }
   // add to snapshot
   Utils::chop_inplace(expval, json_chop_threshold_);
   switch (type) {
     case SnapshotDataType::average:
       data.add_average_snapshot("expectation_value", op.string_params[0],
-                            BaseState::creg_.memory_hex(), expval, false);
+                                BaseState::creg_.memory_hex(), expval, false);
       break;
     case SnapshotDataType::average_var:
       data.add_average_snapshot("expectation_value", op.string_params[0],
-                            BaseState::creg_.memory_hex(), expval, true);
+                                BaseState::creg_.memory_hex(), expval, true);
       break;
     case SnapshotDataType::pershot:
       data.add_pershot_snapshot("expectation_values", op.string_params[0], expval);
