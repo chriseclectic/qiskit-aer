@@ -15,6 +15,9 @@
 #ifndef _aer_framework_linalg_hpp_
 #define _aer_framework_linalg_hpp_
 
+#include "framework/linalg/matrix_utils.hpp"
+#include "framework/linalg/vector_utils.hpp"
+
 #include "framework/linalg/almost_equal.hpp"
 #include "framework/linalg/linops/linops_array.hpp"
 #include "framework/linalg/linops/linops_json.hpp"
