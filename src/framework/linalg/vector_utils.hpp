@@ -21,6 +21,7 @@
 #include <sstream>
 
 #include "framework/linalg/enable_if_numeric.hpp"
+#include "framework/linalg/chop.hpp"
 #include "framework/types.hpp"
 
 namespace AER {
@@ -64,24 +65,6 @@ std::vector<T1> scalar_multiply(const std::vector<T1> &vec, T2 val);
 // to the input vector argument. The product of types T1 * T2 must be valid.
 template <typename T1, typename T2>
 std::vector<T1> &scalar_multiply_inplace(std::vector<T1> &vec, T2 scalar);
-
-// Truncate the first argument its absolute value is less than epsilon
-// this function returns a refernce to the chopped first argument
-double &chop_inplace(double &val, double epsilon);
-std::complex<double> &chop_inplace(std::complex<double> &val, double epsilon);
-
-double chop(double val, double epsilon);
-
-// As above for complex first arguments
-template <typename T>
-std::complex<T> chop(std::complex<T> val, double epsilon);
-// Truncate each element in a vector if its absolute value is less than epsilon
-// This function returns a reference to the chopped input vector
-template <typename T>
-std::vector<T> &chop_inplace(std::vector<T> &vec, double epsilon);
-
-template <typename T>
-std::vector<T> chop(const std::vector<T> &vec, double epsilon);
 
 // Add rhs vector to lhs using move semantics.
 // rhs should not be used after this operation.
@@ -163,41 +146,6 @@ std::vector<T1> &scalar_multiply_inplace(std::vector<T1> &vec, T2 val) {
     elt = val * elt;  // use * incase T1 doesn't have *= method
   }
   return vec;
-}
-
-double &chop_inplace(double &val, double epsilon) {
-  if (std::abs(val) < epsilon) val = 0.;
-  return val;
-}
-
-std::complex<double> &chop_inplace(std::complex<double> &val, double epsilon) {
-  val.real(chop(val.real(), epsilon));
-  val.imag(chop(val.imag(), epsilon));
-  return val;
-}
-
-template <typename T>
-std::vector<T> &chop_inplace(std::vector<T> &vec, double epsilon) {
-  if (epsilon > 0.)
-    for (auto &v : vec) chop_inplace(v, epsilon);
-  return vec;
-}
-
-double chop(double val, double epsilon) {
-  return (std::abs(val) < epsilon) ? 0. : val;
-}
-
-template <typename T>
-std::complex<T> chop(std::complex<T> val, double epsilon) {
-  return {chop(val.real(), epsilon), chop(val.imag(), epsilon)};
-}
-
-template <typename T>
-std::vector<T> chop(const std::vector<T> &vec, double epsilon) {
-  std::vector<T> tmp;
-  tmp.reserve(vec.size());
-  for (const auto &v : vec) tmp.push_back(chop(v, epsilon));
-  return tmp;
 }
 
 template <class T>
