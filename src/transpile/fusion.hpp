@@ -560,25 +560,25 @@ void Fusion::add_fusion_qubits(reg_t& fusion_qubits, const op_t& op) const {
 cmatrix_t Fusion::matrix(const op_t& op) const {
   if (op.type == optype_t::gate) {
     if (op.name == "id") {   // Pauli-Identity gate
-      return Utils::Matrix::I;
+      return Linalg::Matrix::I;
     } else if (op.name == "x") {    // Pauli-X gate
-      return Utils::Matrix::X;
+      return Linalg::Matrix::X;
     } else if (op.name == "y") {    // Pauli-Y gate
-      return Utils::Matrix::Y;
+      return Linalg::Matrix::Y;
     } else if (op.name == "z") {    // Pauli-Z gate
-      return Utils::Matrix::Z;
+      return Linalg::Matrix::Z;
     } else if (op.name == "s") {    // Phase gate (aka sqrt(Z) gate)
-      return Utils::Matrix::S;
+      return Linalg::Matrix::S;
     } else if (op.name == "sdg") {  // Conjugate-transpose of Phase gate
-      return Utils::Matrix::SDG;
+      return Linalg::Matrix::SDG;
     } else if (op.name == "h") {    // Hadamard gate (X + Z / sqrt(2))
-      return Utils::Matrix::H;
+      return Linalg::Matrix::H;
     } else if (op.name == "t") {    // T-gate (sqrt(S))
-      return Utils::Matrix::T;
+      return Linalg::Matrix::T;
     } else if (op.name == "tdg") {  // Conjguate-transpose of T gate
-      return Utils::Matrix::TDG;
+      return Linalg::Matrix::TDG;
     } else if (op.name == "u0") {   // idle gate in multiples of X90
-      return Utils::Matrix::I;
+      return Linalg::Matrix::I;
     } else if (op.name == "u1") {   // zero-X90 pulse waltz gate
       return Utils::make_matrix<complex_t>( {
         { {1, 0}, {0, 0} },
@@ -592,19 +592,19 @@ cmatrix_t Fusion::matrix(const op_t& op) const {
         { {0, 0}, {0, 0}, {0, 0}, std::exp( complex_t(0, 1.) * std::real(op.params[0])) }}
       );
     } else if (op.name == "u2") {   // single-X90 pulse waltz gate
-      return Utils::Matrix::u3( M_PI / 2., std::real(op.params[0]), std::real(op.params[1]));
+      return Linalg::Matrix::u3( M_PI / 2., std::real(op.params[0]), std::real(op.params[1]));
     } else if (op.name == "u3" || op.name == "U") {   // two X90 pulse waltz gate
-      return Utils::Matrix::u3( std::real(op.params[0]), std::real(op.params[1]), std::real(op.params[2]));
+      return Linalg::Matrix::u3( std::real(op.params[0]), std::real(op.params[1]), std::real(op.params[2]));
     // Two-qubit gates
     } else if (op.name == "CX" || op.name == "cx") {   // Controlled-X gate (CNOT)
-      return Utils::Matrix::CX;
+      return Linalg::Matrix::CX;
     } else if (op.name == "cz") {   // Controlled-Z gate
-      return Utils::Matrix::CZ;
+      return Linalg::Matrix::CZ;
     } else if (op.name == "swap") { // SWAP gate
-      return Utils::Matrix::SWAP;
+      return Linalg::Matrix::SWAP;
     // Three-qubit gates
 //    } else if (op.name == "ccx") {   // Controlled-CX gate (Toffoli)
-//      return Utils::Matrix::CCX;
+//      return Linalg::Matrix::CCX;
     } else {
       std::stringstream msg;
       msg << "invalid operation:" << op.name << "\'.matrix()";

@@ -157,25 +157,25 @@ void MPS::initialize(const MPS &other){
 
 void MPS::apply_h(uint_t index) 
 {
-    cmatrix_t h_matrix = AER::Utils::Matrix::H;
+    cmatrix_t h_matrix = AER::Linalg::Matrix::H;
     q_reg_[index].apply_matrix(h_matrix);
 }
 
 void MPS::apply_u1(uint_t index, double lambda)
 {
-  cmatrix_t u1_matrix = AER::Utils::Matrix::u1(lambda);
+  cmatrix_t u1_matrix = AER::Linalg::Matrix::u1(lambda);
   q_reg_[index].apply_matrix(u1_matrix);
 }
 
 void MPS::apply_u2(uint_t index, double phi, double lambda)
 {
-  cmatrix_t u2_matrix = AER::Utils::Matrix::u2(phi, lambda);
+  cmatrix_t u2_matrix = AER::Linalg::Matrix::u2(phi, lambda);
   q_reg_[index].apply_matrix(u2_matrix);
 }
 
 void MPS::apply_u3(uint_t index, double theta, double phi, double lambda)
 {
-  cmatrix_t u3_matrix = AER::Utils::Matrix::u3(theta, phi, lambda);
+  cmatrix_t u3_matrix = AER::Linalg::Matrix::u3(theta, phi, lambda);
   q_reg_[index].apply_matrix(u3_matrix);
 }
 
@@ -190,7 +190,7 @@ void MPS::apply_cz(uint_t index_A, uint_t index_B)
 }
 void MPS::apply_cu1(uint_t index_A, uint_t index_B, double lambda)
 {
-  cmatrix_t u1_matrix = AER::Utils::Matrix::u1(lambda);
+  cmatrix_t u1_matrix = AER::Linalg::Matrix::u1(lambda);
   apply_2_qubit_gate(index_A, index_B, cu1, u1_matrix);
 }
 
@@ -295,8 +295,8 @@ void MPS::apply_2_qubit_gate(uint_t index_A, uint_t index_B, Gates gate_type, cm
 	  break;
 	case cu1:
 	{
-	  cmatrix_t Zeros = AER::Utils::Matrix::I-AER::Utils::Matrix::I;
-	  cmatrix_t temp1 = AER::Utils::concatenate(AER::Utils::Matrix::I, Zeros , 1),
+	  cmatrix_t Zeros = AER::Linalg::Matrix::I-AER::Linalg::Matrix::I;
+	  cmatrix_t temp1 = AER::Utils::concatenate(AER::Linalg::Matrix::I, Zeros , 1),
 		    temp2 = AER::Utils::concatenate(Zeros, mat, 1);
 	  cmatrix_t cu = AER::Utils::concatenate(temp1, temp2 ,0) ;
 	  temp.apply_matrix(cu);
@@ -405,13 +405,13 @@ double MPS::expectation_value(const reg_t &qubits, const string &matrices) const
   for(const char& gate : matrices_reverse)
   {
     if (gate == 'X')
-	  temp = AER::Utils::Matrix::X;
+	  temp = AER::Linalg::Matrix::X;
     else if (gate == 'Y')
-	  temp = AER::Utils::Matrix::Y;
+	  temp = AER::Linalg::Matrix::Y;
     else if (gate == 'Z')
-	  temp = AER::Utils::Matrix::Z;
+	  temp = AER::Linalg::Matrix::Z;
     else if (gate == 'I')
-	  temp = AER::Utils::Matrix::I;
+	  temp = AER::Linalg::Matrix::I;
     M = AER::Utils::tensor_product(M, temp);
   }
   // Trace(rho*M). not using methods for efficiency
