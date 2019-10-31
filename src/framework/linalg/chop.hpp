@@ -36,70 +36,55 @@ namespace Linalg {
 // Chop of general type
 //----------------------------------------------------------------------------
 
-template <class T, typename = enable_if_numeric<T>>
+template <class T, typename = enable_if_numeric_t<T>>
 T chop(const T& val, double epsilon) {
   if (std::abs(val) < epsilon) return T(0);
   return val;
 }
 
-template <class T, typename = enable_if_numeric<T>>
+template <class T, typename = enable_if_numeric_t<T>>
 T& ichop(T& val, double epsilon) {
   if (std::abs(val) < epsilon) val = T(0);
   return val;
-}
-
-template <class T, typename = enable_if_numeric<T>>
-T& chop(T&& val, double epsilon) {
-  return ichop(val);
 }
 
 //----------------------------------------------------------------------------
 // Chop of complex type
 //----------------------------------------------------------------------------
 
-template <class T, typename = enable_if_numeric<T>>
+template <class T, typename = enable_if_numeric_t<T>>
 std::complex<T> chop(const std::complex<T>& val, double epsilon) {
   return complex_t(chop(T(val.real()), epsilon), chop(T(val.imag()), epsilon));
 }
 
-template <class T, typename = enable_if_numeric<T>>
+template <class T, typename = enable_if_numeric_t<T>>
 std::complex<T>& ichop(std::complex<T>& val, double epsilon) {
   val.real(ichop(T(val.real()), epsilon));
   val.imag(ichop(T(val.imag()), epsilon));
   return val;
 }
 
-template <class T, typename = enable_if_numeric<T>>
-std::complex<T>& chop(std::complex<T>&& val, double epsilon) {
-  return ichop(val, epsilon);
-}
-
 //----------------------------------------------------------------------------
 // Entrywise chop of std::array
 //----------------------------------------------------------------------------
 
-template <class T, size_t N, typename = enable_if_numeric<T>>
+template <class T, size_t N, typename = enable_if_numeric_t<T>>
 std::array<T, N>& ichop(std::array<T, N>& val, double epsilon) {
   for (const auto& v : val) ichop(v, epsilon);
   return val;
 }
 
-template <class T, size_t N, typename = enable_if_numeric<T>>
+template <class T, size_t N, typename = enable_if_numeric_t<T>>
 std::array<T, N> chop(const std::array<T, N>& val, double epsilon) {
   std::array<T, N> result = val;
   return ichop(result, epsilon);
-}
-
-template <class T, size_t N, typename = enable_if_numeric<T>>
-std::array<T, N>& ichop(std::array<T, N>&& val, double epsilon) {
-  return ichop(val, epsilon);
 }
 
 //----------------------------------------------------------------------------
 // Entrywise chop of std::vector
 //----------------------------------------------------------------------------
 
-template <typename T, typename = enable_if_numeric<T>>
+template <typename T, typename = enable_if_numeric_t<T>>
 std::vector<T> chop(const std::vector<T>& val, double epsilon) {
   std::vector<T> result;
   result.reserve(val.size());
@@ -107,15 +92,10 @@ std::vector<T> chop(const std::vector<T>& val, double epsilon) {
   return result;
 }
 
-template <typename T, typename = enable_if_numeric<T>>
+template <typename T, typename = enable_if_numeric_t<T>>
 std::vector<T>& ichop(std::vector<T>& val, double epsilon) {
   for (auto& v : val) ichop(v, epsilon);
   return val;
-}
-
-template <typename T, typename = enable_if_numeric<T>>
-std::vector<T>& chop(std::vector<T>&& val, double epsilon) {
-  return ichop(val, epsilon);
 }
 
 //----------------------------------------------------------------------------
@@ -123,7 +103,7 @@ std::vector<T>& chop(std::vector<T>&& val, double epsilon) {
 //----------------------------------------------------------------------------
 
 template <class T1, class T2, class T3, class T4,
-          typename = enable_if_numeric<T2>>
+          typename = enable_if_numeric_t<T2>>
 std::map<T1, T2, T3, T4> chop(const std::map<T1, T2, T3, T4>& val,
                               double epsilon) {
   std::map<T1, T2, T3, T4> result;
@@ -134,7 +114,7 @@ std::map<T1, T2, T3, T4> chop(const std::map<T1, T2, T3, T4>& val,
 }
 
 template <class T1, class T2, class T3, class T4,
-          typename = enable_if_numeric<T2>>
+          typename = enable_if_numeric_t<T2>>
 std::map<T1, T2, T3, T4>& ichop(std::map<T1, T2, T3, T4>& val, double epsilon) {
   for (auto& pair : val) {
     ichop(pair.second, epsilon);
@@ -142,18 +122,12 @@ std::map<T1, T2, T3, T4>& ichop(std::map<T1, T2, T3, T4>& val, double epsilon) {
   return val;
 }
 
-template <class T1, class T2, class T3, class T4,
-          typename = enable_if_numeric<T2>>
-std::map<T1, T2, T3, T4>& chop(std::map<T1, T2, T3, T4>&& val, double epsilon) {
-  return ichop(pair.second, epsilon);
-}
-
 //----------------------------------------------------------------------------
 // Entrywise chop of std::unordered_map
 //----------------------------------------------------------------------------
 
 template <class T1, class T2, class T3, class T4, class T5,
-          typename = enable_if_numeric<T2>>
+          typename = enable_if_numeric_t<T2>>
 std::unordered_map<T1, T2, T3, T4, T5> chop(
     const std::unordered_map<T1, T2, T3, T4, T5>& val, double epsilon) {
   std::unordered_map<T1, T2, T3, T4, T5> result;
@@ -164,7 +138,7 @@ std::unordered_map<T1, T2, T3, T4, T5> chop(
 }
 
 template <class T1, class T2, class T3, class T4, class T5,
-          typename = enable_if_numeric<T2>>
+          typename = enable_if_numeric_t<T2>>
 std::unordered_map<T1, T2, T3, T4, T5>& ichop(
     std::unordered_map<T1, T2, T3, T4, T5>& val, double epsilon) {
   for (auto& pair : val) {
@@ -173,18 +147,11 @@ std::unordered_map<T1, T2, T3, T4, T5>& ichop(
   return val;
 }
 
-template <class T1, class T2, class T3, class T4, class T5,
-          typename = enable_if_numeric<T2>>
-std::unordered_map<T1, T2, T3, T4, T5>& chop(
-    std::unordered_map<T1, T2, T3, T4, T5>&& val, double epsilon) {
-  return ichop(pair.second, epsilon);
-}
-
 //----------------------------------------------------------------------------
 // Entrywise chop of matrix
 //----------------------------------------------------------------------------
 
-template <class T, typename = enable_if_numeric<T>>
+template <class T, typename = enable_if_numeric_t<T>>
 matrix<T>& ichop(matrix<T>& val, double epsilon) {
   for (size_t j = 0; j < val.size(); j++) {
     ichop(val[j]);
@@ -192,15 +159,10 @@ matrix<T>& ichop(matrix<T>& val, double epsilon) {
   return val;
 }
 
-template <class T, typename = enable_if_numeric<T>>
+template <class T, typename = enable_if_numeric_t<T>>
 matrix<T> chop(const matrix<T>& val, double epsilon) {
   matrix<T> result = val;
   return ichop(result);
-}
-
-template <class T, typename = enable_if_numeric<T>>
-matrix<T>& chop(matrix<T>&& val, double epsilon) {
-  return ichop(val);
 }
 
 //----------------------------------------------------------------------------
@@ -211,7 +173,8 @@ json_t& ichop(json_t& val, double epsilon) {
   // Terminating case
   if (val.is_number()) {
     double num = val;
-    return json_t(ichop(num, epsilon));
+    val = ichop(num, epsilon);
+    return val;
   }
   // Recursive cases
   if (val.is_array()) {
@@ -232,10 +195,6 @@ json_t& ichop(json_t& val, double epsilon) {
 json_t chop(const json_t& val, double epsilon) {
   json_t result = val;
   return ichop(result, epsilon);
-}
-
-json_t& chop(json_t&& val, double epsilon) {
-  return ichop(val, epsilon);
 }
 
 //------------------------------------------------------------------------------
