@@ -15,17 +15,55 @@ Qiskit Aer statevector simulator backend.
 """
 
 import logging
-from math import log2
 from qiskit.util import local_hardware_info
 from qiskit.providers.models import QasmBackendConfiguration
-from .aerbackend import AerBackend
-# pylint: disable=import-error
-from .controller_wrappers import statevector_controller_execute
-from ..aererror import AerError
-from ..version import __version__
+from qiskit.providers.aer.backends.aerbackend import AerBackend
+from qiskit.providers.aer.backends.backend_utils import (backend_gates,
+                                                         available_methods,
+                                                         MAX_QUBITS_STATEVECTOR)
+from qiskit.providers.aer.aererror import AerError
+from qiskit.providers.aer.version import __version__
+# pylint: disable=import-error, no-name-in-module
+from qiskit.providers.aer.backends.controller_wrappers import statevector_controller_execute
 
 # Logger
 logger = logging.getLogger(__name__)
+
+AVAILABLE_METHODS = available_methods(
+    statevector_controller_execute, [
+        'automatic',
+        'statevector',
+        'statevector_gpu',
+        'statevector_thrust'
+    ])
+
+BASIS_GATES = [
+    'u1', 'u2', 'u3', 'cx', 'cz', 'id', 'x', 'y', 'z', 'h', 's', 'sdg',
+    't', 'tdg', 'swap', 'ccx', 'unitary', 'initialize', 'cu1', 'cu2',
+    'cu3', 'cswap', 'mcx', 'mcy', 'mcz', 'mcu1', 'mcu2', 'mcu3',
+    'mcswap', 'multiplexer'
+]
+
+DEFAULT_CONFIGURATION = {
+    'backend_name': 'statevector_simulator',
+    'backend_version': __version__,
+    'n_qubits': MAX_QUBITS_STATEVECTOR,
+    'url': 'https://github.com/Qiskit/qiskit-aer',
+    'simulator': True,
+    'local': True,
+    'conditional': True,
+    'open_pulse': False,
+    'memory': True,
+    'max_shots': int(1e6),  # Note that this backend will only ever
+                            # perform a single shot. This value is just
+                            # so that the default shot value for execute
+                            # will not raise an error when trying to run
+                            # a simulation
+    'description': 'A C++ statevector simulator for QASM Qobj files',
+    'coupling_map': None,
+    'basis_gates': BASIS_GATES,
+    'gates': backend_gates(BASIS_GATES)
+}
 
 
 class StatevectorSimulator(AerBackend):
@@ -68,43 +106,16 @@ class StatevectorSimulator(AerBackend):
       performance (Default: 14).
     """
 
-    MAX_QUBIT_MEMORY = int(log2(local_hardware_info()['memory'] * (1024 ** 3) / 16))
+    def __init__(self,
+                 provider=None,
+                 **backend_options):
+        super().__init__(QasmBackendConfiguration.from_dict(DEFAULT_CONFIGURATION),
+                         available_methods=AVAILABLE_METHODS,
+                         provider=provider,
+                         controller=statevector_controller_execute(),
+                         backend_options=backend_options)
 
-    DEFAULT_CONFIGURATION = {
-        'backend_name': 'statevector_simulator',
-        'backend_version': __version__,
-        'n_qubits': MAX_QUBIT_MEMORY,
-        'url': 'https://github.com/Qiskit/qiskit-aer',
-        'simulator': True,
-        'local': True,
-        'conditional': True,
-        'open_pulse': False,
-        'memory': True,
-        'max_shots': int(1e6),  # Note that this backend will only ever
-                                # perform a single shot. This value is just
-                                # so that the default shot value for execute
-                                # will not raise an error when trying to run
-                                # a simulation
-        'description': 'A C++ statevector simulator for QASM Qobj files',
-        'coupling_map': None,
-        'basis_gates': [
-            'u1', 'u2', 'u3', 'p', 'r', 'rx', 'ry', 'rz', 'id', 'x', 'y',
-            'z', 'h', 's', 'sdg', 'sx', 't', 'tdg', 'swap', 'cx', 'cy',
-            'cz', 'csx', 'cp', 'cu1', 'cu2', 'cu3', 'rxx', 'ryy', 'rzz',
-            'rzx', 'ccx', 'cswap', 'mcx', 'mcy', 'mcz', 'mcsx', 'mcp',
-            'mcu1', 'mcu2', 'mcu3', 'mcrx', 'mcry', 'mcrz', 'mcr',
-            'mcswap', 'unitary', 'diagonal', 'multiplexer', 'initialize',
-            'kraus', 'roerror', 'delay'
-        ],
-        'gates': []
-    }
-
-    def __init__(self, configuration=None, provider=None):
-        super().__init__(statevector_controller_execute(),
-                         QasmBackendConfiguration.from_dict(self.DEFAULT_CONFIGURATION),
-                         provider=provider)
-
-    def _validate(self, qobj, backend_options, noise_model):
+    def _validate(self, qobj, options):
         """Semantic validations of the qobj which cannot be done via schemas.
         Some of these may later move to backend schemas.
 
@@ -112,7 +123,7 @@ class StatevectorSimulator(AerBackend):
         2. Check number of qubits will fit in local memory.
         """
         name = self.name()
-        if noise_model is not None:
+        if options and 'noise_model' in options:
             raise AerError("{} does not support noise.".format(name))
 
         n_qubits = qobj.config.n_qubits
