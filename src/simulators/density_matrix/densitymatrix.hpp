@@ -274,7 +274,7 @@ void DensityMatrix<data_t>::apply_cz(const uint_t q0, const uint_t q1) {
   };
   const auto nq =  num_qubits();
   const areg_t<4> qubits = {{q0, q1, q0 + nq, q1 + nq}};
-  BaseVector::apply_lambda(lambda, qubits);
+  BaseVector::kernel_.apply_lambda(BaseVector::data_size_, lambda, qubits);
 }
 
 template <typename data_t>
@@ -296,7 +296,7 @@ void DensityMatrix<data_t>::apply_x(const uint_t qubit) {
   };
   // Use the lambda function
   const areg_t<2> qubits = {{qubit, qubit + num_qubits()}};
-  BaseVector::apply_lambda(lambda, qubits);
+  BaseVector::kernel_.apply_lambda(BaseVector::data_size_, lambda, qubits);
 
 }
 
@@ -311,7 +311,7 @@ void DensityMatrix<data_t>::apply_y(const uint_t qubit) {
   };
   // Use the lambda function
   const areg_t<2> qubits = {{qubit, qubit + num_qubits()}};
-  BaseVector::apply_lambda(lambda, qubits);
+  BaseVector::kernel_.apply_lambda(BaseVector::data_size_, lambda, qubits);
 }
 
 template <typename data_t>
@@ -323,7 +323,7 @@ void DensityMatrix<data_t>::apply_z(const uint_t qubit) {
   };
   // Use the lambda function
   const areg_t<2> qubits = {{qubit, qubit + num_qubits()}};
-  BaseVector::apply_lambda(lambda, qubits);
+  BaseVector::kernel_.apply_lambda(BaseVector::data_size_, lambda, qubits);
 }
 
 template <typename data_t>

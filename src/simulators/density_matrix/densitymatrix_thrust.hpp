@@ -462,7 +462,7 @@ reg_t DensityMatrixThrust<data_t>::sample_measure(const std::vector<double> &rnd
   samples.assign(SHOTS, 0);
 
   const int INDEX_SIZE = BaseVector::sample_measure_index_size_;
-  const int_t INDEX_END = BITS[INDEX_SIZE];
+  const int_t INDEX_END = Index::BITS[INDEX_SIZE];
   // Qubit number is below index size, loop over shots
   if (END < INDEX_END) {
     #pragma omp parallel if (BaseVector::num_qubits_ > BaseVector::omp_threshold_ && BaseVector::omp_threads_ > 1) num_threads(BaseVector::omp_threads_)

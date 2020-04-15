@@ -29,6 +29,7 @@
 #include <stdexcept>
 
 #include "framework/json.hpp"
+#include "simulators/statevector/omp_kernel.hpp"
 
 namespace QV {
 
@@ -39,62 +40,6 @@ using reg_t = std::vector<uint_t>;
 using indexes_t = std::unique_ptr<uint_t[]>;
 template <size_t N> using areg_t = std::array<uint_t, N>;
 template <typename T> using cvector_t = std::vector<std::complex<T>>;
-
-//============================================================================
-// BIT MASKS and indexing
-//============================================================================
-
-/*
-# Auto generate these values with following python snippet
-import json
-
-def cpp_init_list(int_lst):
-    ret = json.dumps([str(i) + 'ULL' for i in int_lst])
-    return ret.replace('"', '').replace('[','{{').replace(']','}};')
-
-print('const std::array<uint_t, 64> BITS = ' + cpp_init_list([(1 << i) for i in range(64)]) + '\n')
-print('const std::array<uint_t, 64> MASKS = ' + cpp_init_list([(1 << i) - 1 for i in range(64)]))
-*/
-
-const std::array<uint_t, 64> BITS {{
-  1ULL, 2ULL, 4ULL, 8ULL,
-  16ULL, 32ULL, 64ULL, 128ULL,
-  256ULL, 512ULL, 1024ULL, 2048ULL,
-  4096ULL, 8192ULL, 16384ULL, 32768ULL,
-  65536ULL, 131072ULL, 262144ULL, 524288ULL,
-  1048576ULL, 2097152ULL, 4194304ULL, 8388608ULL,
-  16777216ULL, 33554432ULL, 67108864ULL, 134217728ULL,
-  268435456ULL, 536870912ULL, 1073741824ULL, 2147483648ULL,
-  4294967296ULL, 8589934592ULL, 17179869184ULL, 34359738368ULL,
-  68719476736ULL, 137438953472ULL, 274877906944ULL, 549755813888ULL,
-  1099511627776ULL, 2199023255552ULL, 4398046511104ULL, 8796093022208ULL,
-  17592186044416ULL, 35184372088832ULL, 70368744177664ULL, 140737488355328ULL, 
-  281474976710656ULL, 562949953421312ULL, 1125899906842624ULL, 2251799813685248ULL,
-  4503599627370496ULL, 9007199254740992ULL, 18014398509481984ULL, 36028797018963968ULL,
-  72057594037927936ULL, 144115188075855872ULL, 288230376151711744ULL, 576460752303423488ULL,
-  1152921504606846976ULL, 2305843009213693952ULL, 4611686018427387904ULL, 9223372036854775808ULL
-}};
-
-
-const std::array<uint_t, 64> MASKS {{
-  0ULL, 1ULL, 3ULL, 7ULL,
-  15ULL, 31ULL, 63ULL, 127ULL,
-  255ULL, 511ULL, 1023ULL, 2047ULL,
-  4095ULL, 8191ULL, 16383ULL, 32767ULL,
-  65535ULL, 131071ULL, 262143ULL, 524287ULL,
-  1048575ULL, 2097151ULL, 4194303ULL, 8388607ULL,
-  16777215ULL, 33554431ULL, 67108863ULL, 134217727ULL,
-  268435455ULL, 536870911ULL, 1073741823ULL, 2147483647ULL,
-  4294967295ULL, 8589934591ULL, 17179869183ULL, 34359738367ULL,
-  68719476735ULL, 137438953471ULL, 274877906943ULL, 549755813887ULL,
-  1099511627775ULL, 2199023255551ULL, 4398046511103ULL, 8796093022207ULL,
-  17592186044415ULL, 35184372088831ULL, 70368744177663ULL, 140737488355327ULL,
-  281474976710655ULL, 562949953421311ULL, 1125899906842623ULL, 2251799813685247ULL,
-  4503599627370495ULL, 9007199254740991ULL, 18014398509481983ULL, 36028797018963967ULL,
-  72057594037927935ULL, 144115188075855871ULL, 288230376151711743ULL, 576460752303423487ULL,
-  1152921504606846975ULL, 2305843009213693951ULL, 4611686018427387903ULL, 9223372036854775807ULL
-}};
-
 
 //============================================================================
 // QubitVector class
@@ -169,47 +114,12 @@ public:
   // convert vector type to data type of this qubit vector
   cvector_t<data_t> convert(const cvector_t<double>& v) const;
 
-  // index0 returns the integer representation of a number of bits set
-  // to zero inserted into an arbitrary bit string.
-  // Eg: for qubits 0,2 in a state k = ba ( ba = 00 => k=0, etc).
-  // indexes0([1], k) -> int(b0a)
-  // indexes0([1,3], k) -> int(0b0a)
-  // Example: k = 77  = 1001101 , qubits_sorted = [1,4]
-  // ==> output = 297 = 100101001 (with 0's put into places 1 and 4).
-  template<typename list_t>
-  uint_t index0(const list_t &qubits_sorted, const uint_t k) const;
-
-  // Return a std::unique_ptr to an array of of 2^N in ints
-  // each int corresponds to an N qubit bitstring for M-N qubit bits in state k,
-  // and the specified N qubits in states [0, ..., 2^N - 1]
-  // qubits_sorted must be sorted lowest to highest. Eg. {0, 1}.
-  // qubits specifies the location of the qubits in the returned strings.
-  // NOTE: since the return is a unique_ptr it cannot be copied.
-  // indexes returns the array of all bit values for the specified qubits
-  // (Eg: for qubits 0,2 in a state k = ba:
-  // indexes([1], [1], k) = [int(b0a), int(b1a)],
-  // if it were two qubits inserted say at 1,3 it would be:
-  // indexes([1,3], [1,3], k) -> [int(0b0a), int(0b1a), int(1b0a), (1b1a)]
-  // If the qubits were passed in reverse order it would swap qubit position in the list:
-  // indexes([3,1], [1,3], k) -> [int(0b0a), int(1b0a), int(0b1a), (1b1a)]
-  // Example: k=77, qubits=qubits_sorted=[1,4] ==> output=[297,299,313,315]
-  // input: k = 77  = 1001101
-  // output[0]: 297 = 100101001 (with 0's put into places 1 and 4).
-  // output[1]: 299 = 100101011 (with 0 put into place 1, and 1 put into place 4).
-  // output[2]: 313 = 100111001 (with 1 put into place 1, and 0 put into place 4).
-  // output[3]: 313 = 100111011 (with 1's put into places 1 and 4).
-  indexes_t indexes(const reg_t &qubits, const reg_t &qubits_sorted, const uint_t k) const;
-
-  // As above but returns a fixed sized array of of 2^N in ints
-  template<size_t N>
-  areg_t<1ULL << N> indexes(const areg_t<N> &qs, const areg_t<N> &qubits_sorted, const uint_t k) const;
-
   // State initialization of a component
   // Initialize the specified qubits to a desired statevector
   // (leaving the other qubits in their current state)
   // assuming the qubits being initialized have already been reset to the zero state
   // (using apply_reset)
-  void initialize_component(const reg_t &qubits, const cvector_t<double> &state);
+  void initialize_component(const Index::reg_t &qubits, const cvector_t<double> &state);
 
   //-----------------------------------------------------------------------
   // Check point operations
@@ -250,11 +160,11 @@ public:
 
   // Apply a N-qubit matrix to the state vector.
   // The matrix is input as vector of the column-major vectorized N-qubit matrix.
-  void apply_matrix(const reg_t &qubits, const cvector_t<double> &mat);
+  void apply_matrix(const Index::reg_t &qubits, const cvector_t<double> &mat);
 
   // Apply a stacked set of 2^control_count target_count--qubit matrix to the state vector.
   // The matrix is input as vector of the column-major vectorized N-qubit matrix.
-  void apply_multiplexer(const reg_t &control_qubits, const reg_t &target_qubits, const cvector_t<double> &mat);
+  void apply_multiplexer(const Index::reg_t &control_qubits, const Index::reg_t &target_qubits, const cvector_t<double> &mat);
 
   // Apply a 1-qubit diagonal matrix to the state vector.
   // The matrix is input as vector of the matrix diagonal.
@@ -262,10 +172,10 @@ public:
 
   // Apply a N-qubit diagonal matrix to the state vector.
   // The matrix is input as vector of the matrix diagonal.
-  void apply_diagonal_matrix(const reg_t &qubits, const cvector_t<double> &mat);
+  void apply_diagonal_matrix(const Index::reg_t &qubits, const cvector_t<double> &mat);
   
   // Swap pairs of indicies in the underlying vector
-  void apply_permutation_matrix(const reg_t &qubits,
+  void apply_permutation_matrix(const Index::reg_t &qubits,
                                 const std::vector<std::pair<uint_t, uint_t>> &pairs);
 
   //-----------------------------------------------------------------------
@@ -276,13 +186,13 @@ public:
   // If N=1 this implements an optimized X gate
   // If N=2 this implements an optimized CX gate
   // If N=3 this implements an optimized Toffoli gate
-  void apply_mcx(const reg_t &qubits);
+  void apply_mcx(const Index::reg_t &qubits);
 
   // Apply a general multi-controlled Y-gate
   // If N=1 this implements an optimized Y gate
   // If N=2 this implements an optimized CY gate
   // If N=3 this implements an optimized CCY gate
-  void apply_mcy(const reg_t &qubits);
+  void apply_mcy(const Index::reg_t &qubits);
   
   // Apply a general multi-controlled single-qubit phase gate
   // with diagonal [1, ..., 1, phase]
@@ -290,18 +200,18 @@ public:
   // If N=2 this implements an optimized CPhase gate
   // If N=3 this implements an optimized CCPhase gate
   // if phase = -1 this is a Z, CZ, CCZ gate
-  void apply_mcphase(const reg_t &qubits, const std::complex<double> phase);
+  void apply_mcphase(const Index::reg_t &qubits, const std::complex<double> phase);
 
   // Apply a general multi-controlled single-qubit unitary gate
   // If N=1 this implements an optimized single-qubit U gate
   // If N=2 this implements an optimized CU gate
   // If N=3 this implements an optimized CCU gate
-  void apply_mcu(const reg_t &qubits, const cvector_t<double> &mat);
+  void apply_mcu(const Index::reg_t &qubits, const cvector_t<double> &mat);
 
   // Apply a general multi-controlled SWAP gate
   // If N=2 this implements an optimized SWAP  gate
   // If N=3 this implements an optimized Fredkin gate
-  void apply_mcswap(const reg_t &qubits);
+  void apply_mcswap(const Index::reg_t &qubits);
 
   //-----------------------------------------------------------------------
   // Z-measurement outcome probabilities
@@ -318,7 +228,7 @@ public:
 
   // Return the Z-basis measurement outcome probabilities [P(0), ..., P(2^N-1)]
   // for measurement of N-qubits.
-  virtual std::vector<double> probabilities(const reg_t &qubits) const;
+  virtual std::vector<double> probabilities(const Index::reg_t &qubits) const;
 
   // Return M sampled outcomes for Z-basis measurement of all qubits
   // The input is a length M list of random reals between [0, 1) used for
@@ -345,7 +255,7 @@ public:
   // Return the norm for of the vector obtained after apply the N-qubit
   // matrix mat to the vector.
   // The matrix is input as vector of the column-major vectorized N-qubit matrix.
-  double norm(const reg_t &qubits, const cvector_t<double> &mat) const;
+  double norm(const Index::reg_t &qubits, const cvector_t<double> &mat) const;
 
   // Return the norm for of the vector obtained after apply the 1-qubit
   // diagonal matrix mat to the vector.
@@ -355,7 +265,7 @@ public:
   // Return the norm for of the vector obtained after apply the N-qubit
   // diagonal matrix mat to the vector.
   // The matrix is input as vector of the matrix diagonal.
-  double norm_diagonal(const reg_t &qubits, const cvector_t<double> &mat) const;
+  double norm_diagonal(const Index::reg_t &qubits, const cvector_t<double> &mat) const;
 
   //-----------------------------------------------------------------------
   // JSON configuration settings
@@ -405,6 +315,11 @@ protected:
   std::complex<data_t>* checkpoint_;
 
   //-----------------------------------------------------------------------
+  // OMP Kernel
+  //-----------------------------------------------------------------------
+  Kernel::OMPKernel kernel_;
+
+  //-----------------------------------------------------------------------
   // Config settings
   //----------------------------------------------------------------------- 
   uint_t omp_threads_ = 1;     // Disable multithreading by default
@@ -423,111 +338,6 @@ protected:
   void check_dimension(const QubitVector &qv) const;
   void check_checkpoint() const;
 
-  //-----------------------------------------------------------------------
-  // Statevector update with Lambda function
-  //-----------------------------------------------------------------------
-  // Apply a lambda function to all entries of the statevector.
-  // The function signature should be:
-  //
-  // [&](const int_t k)->void
-  //
-  // where k is the index of the vector
-  template <typename Lambda>
-  void apply_lambda(Lambda&& func);
-
-  //-----------------------------------------------------------------------
-  // Statevector block update with Lambda function
-  //-----------------------------------------------------------------------
-  // These functions loop through the indexes of the qubitvector data and
-  // apply a lambda function to each block specified by the qubits argument.
-  //
-  // NOTE: The lambda functions can use the dynamic or static indexes
-  // signature however if N is known at compile time the static case should
-  // be preferred as it is significantly faster.
-
-  // Apply a N-qubit lambda function to all blocks of the statevector
-  // for the given qubits. The function signature should be either:
-  //
-  // (Static): [&](const areg_t<1ULL<<N> &inds)->void
-  // (Dynamic): [&](const indexes_t &inds)->void
-  //
-  // where `inds` are the 2 ** N indexes for each N-qubit block returned by
-  // the `indexes` function.
-  template <typename Lambda, typename list_t>
-  void apply_lambda(Lambda&& func, const list_t &qubits);
-
-  // Apply an N-qubit parameterized lambda function to all blocks of the
-  // statevector for the given qubits. The function signature should be:
-  //
-  // (Static): [&](const areg_t<1ULL<<N> &inds, const param_t &params)->void
-  // (Dynamic): [&](const indexes_t &inds, const param_t &params)->void
-  //
-  // where `inds` are the 2 ** N indexes for each N-qubit block returned by
-  // the `indexes` function and `param` is a templated parameter class.
-  // (typically a complex vector).
-  template <typename Lambda, typename list_t, typename param_t>
-  void apply_lambda(Lambda&& func, const list_t &qubits, const param_t &par);
-
-  //-----------------------------------------------------------------------
-  // State reduction with Lambda functions
-  //-----------------------------------------------------------------------
-  // Apply a complex reduction lambda function to all entries of the
-  // statevector and return the complex result.
-  // The function signature should be:
-  //
-  // [&](const int_t k, double &val_re, double &val_im)->void
-  //
-  // where k is the index of the vector, val_re and val_im are the doubles
-  // to store the reduction.
-  // Returns std::complex<double>(val_re, val_im)
-  template <typename Lambda>
-  std::complex<double> apply_reduction_lambda(Lambda&& func) const;
-
-  //-----------------------------------------------------------------------
-  // Statevector block reduction with Lambda function
-  //-----------------------------------------------------------------------
-  // These functions loop through the indexes of the qubitvector data and
-  // apply a reduction lambda function to each block specified by the qubits
-  // argument. The reduction lambda stores the reduction in two doubles
-  // (val_re, val_im) and returns the complex result std::complex<double>(val_re, val_im)
-  //
-  // NOTE: The lambda functions can use the dynamic or static indexes
-  // signature however if N is known at compile time the static case should
-  // be preferred as it is significantly faster.
-
-  // Apply a N-qubit complex matrix reduction lambda function to all blocks
-  // of the statevector for the given qubits.
-  // The lambda function signature should be:
-  //
-  // (Static): [&](const areg_t<1ULL<<N> &inds, const param_t &mat,
-  //               double &val_re, double &val_im)->void
-  // (Dynamic): [&](const indexes_t &inds, const param_t &mat,
-  //                double &val_re, double &val_im)->void
-  //
-  // where `inds` are the 2 ** N indexes for each N-qubit block returned by
-  // the `indexes` function, `val_re` and `val_im` are the doubles to
-  // store the reduction returned as std::complex<double>(val_re, val_im).
-  template <typename Lambda, typename list_t>
-  std::complex<double> apply_reduction_lambda(Lambda&& func,
-                                              const list_t &qubits) const;
-
-  // Apply a N-qubit complex matrix reduction lambda function to all blocks
-  // of the statevector for the given qubits.
-  // The lambda function signature should be:
-  //
-  // (Static): [&](const areg_t<1ULL<<N> &inds, const param_t &parms,
-  //               double &val_re, double &val_im)->void
-  // (Dynamic): [&](const indexes_t &inds, const param_t &params,
-  //                double &val_re, double &val_im)->void
-  //
-  // where `inds` are the 2 ** N indexes for each N-qubit block returned by
-  // the `indexe`s function, `params` is a templated parameter class
-  // (typically a complex vector), `val_re` and `val_im` are the doubles to
-  // store the reduction returned as std::complex<double>(val_re, val_im).
-  template <typename Lambda, typename list_t, typename param_t>
-  std::complex<double> apply_reduction_lambda(Lambda&& func,
-                                              const list_t &qubits,
-                                              const param_t &params) const;
 };
 
 /*******************************************************************************
@@ -547,24 +357,23 @@ inline void to_json(json_t &js, const QubitVector<data_t> &qv) {
 
 template <typename data_t>
 json_t QubitVector<data_t>::json() const {
-  const int_t END = data_size_;
   const json_t ZERO = std::complex<data_t>(0.0, 0.0);
   json_t js = json_t(data_size_, ZERO);
 
   if (json_chop_threshold_ > 0) {
-    #pragma omp parallel for if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-    for (int_t j=0; j < END; j++) {
+    auto lambda = [&](int_t j) {
       if (std::abs(data_[j].real()) > json_chop_threshold_)
         js[j][0] = data_[j].real();
       if (std::abs(data_[j].imag()) > json_chop_threshold_)
         js[j][1] = data_[j].imag();
-    }
+    };
+    kernel_.apply_lambda(data_size_, lambda);
   } else {
-    #pragma omp parallel for if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-    for (int_t j=0; j < END; j++) {
+    auto lambda = [&](int_t j) {
       js[j][0] = data_[j].real();
       js[j][1] = data_[j].imag();
-    }
+    };
+    kernel_.apply_lambda(data_size_, lambda);
   }
   return js;
 }
@@ -584,7 +393,7 @@ void QubitVector<data_t>::check_qubit(const uint_t qubit) const {
 
 template <typename data_t>
 void QubitVector<data_t>::check_matrix(const cvector_t<data_t> &vec, uint_t nqubits) const {
-  const size_t DIM = BITS[nqubits];
+  const size_t DIM = Index::BITS[nqubits];
   const auto SIZE = vec.size();
   if (SIZE != DIM * DIM) {
     std::string error = "QubitVector: vector size is " + std::to_string(SIZE) +
@@ -595,7 +404,7 @@ void QubitVector<data_t>::check_matrix(const cvector_t<data_t> &vec, uint_t nqub
 
 template <typename data_t>
 void QubitVector<data_t>::check_vector(const cvector_t<data_t> &vec, uint_t nqubits) const {
-  const size_t DIM = BITS[nqubits];
+  const size_t DIM = Index::BITS[nqubits];
   const auto SIZE = vec.size();
   if (SIZE != DIM) {
     std::string error = "QubitVector: vector size is " + std::to_string(SIZE) +
@@ -675,82 +484,30 @@ std::complex<data_t> QubitVector<data_t>::operator[](uint_t element) const {
 template <typename data_t>
 cvector_t<data_t> QubitVector<data_t>::vector() const {
   cvector_t<data_t> ret(data_size_, 0.);
-  const int_t END = data_size_;
-  #pragma omp parallel for if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-  for (int_t j=0; j < END; j++) {
-    ret[j] = data_[j];
-  }
+  auto lambda = [&](int_t k)-> void {ret[k] = data_[k];};
+  kernel_.apply_lambda(data_size_, lambda);
   return ret;
 }
 
-//------------------------------------------------------------------------------
-// Indexing
-//------------------------------------------------------------------------------
-
-template <typename data_t>
-template <typename list_t>
-uint_t QubitVector<data_t>::index0(const list_t &qubits_sorted, const uint_t k) const {
-  uint_t lowbits, retval = k;
-  for (size_t j = 0; j < qubits_sorted.size(); j++) {
-    lowbits = retval & MASKS[qubits_sorted[j]];
-    retval >>= qubits_sorted[j];
-    retval <<= qubits_sorted[j] + 1;
-    retval |= lowbits;
-  }
-  return retval;
-}
-
-template <typename data_t>
-template <size_t N>
-areg_t<1ULL << N> QubitVector<data_t>::indexes(const areg_t<N> &qs,
-                                               const areg_t<N> &qubits_sorted,
-                                               const uint_t k) const {
-  areg_t<1ULL << N> ret;
-  ret[0] = index0(qubits_sorted, k);
-  for (size_t i = 0; i < N; i++) {
-    const auto n = BITS[i];
-    const auto bit = BITS[qs[i]];
-    for (size_t j = 0; j < n; j++)
-      ret[n + j] = ret[j] | bit;
-  }
-  return ret;
-}
-
-template <typename data_t>
-indexes_t QubitVector<data_t>::indexes(const reg_t& qubits,
-                                       const reg_t& qubits_sorted,
-                                       const uint_t k) const {
-  const auto N = qubits_sorted.size();
-  indexes_t ret(new uint_t[BITS[N]]);
-  // Get index0
-  ret[0] = index0(qubits_sorted, k);
-  for (size_t i = 0; i < N; i++) {
-    const auto n = BITS[i];
-    const auto bit = BITS[qubits[i]];
-    for (size_t j = 0; j < n; j++)
-      ret[n + j] = ret[j] | bit;
-  }
-  return ret;
-}
 
 //------------------------------------------------------------------------------
 // State initialize component
 //------------------------------------------------------------------------------
 template <typename data_t>
-void QubitVector<data_t>::initialize_component(const reg_t &qubits, const cvector_t<double> &state0) {
+void QubitVector<data_t>::initialize_component(const Index::reg_t &qubits, const cvector_t<double> &state0) {
 
   cvector_t<data_t> state = convert(state0);
 
   // Lambda function for initializing component
-  auto lambda = [&](const indexes_t &inds, const cvector_t<data_t> &_state)->void {
-    const uint_t DIM = 1ULL << qubits.size();
+  auto lambda = [&](const Index::indexes_t &inds)->void {
+    const uint_t DIM = Index::BITS[qubits.size()];
     std::complex<data_t> cache = data_[inds[0]];  // the k-th component of non-initialized vector
     for (size_t i = 0; i < DIM; i++) {
-      data_[inds[i]] = cache * _state[i];  // set component to psi[k] * state[i]
+      data_[inds[i]] = kernel_.cmul(cache, state[i]);  // set component to psi[k] * state[i]
     }    // (where psi is is the post-reset state of the non-initialized qubits)
    };
   // Use the lambda function
-  apply_lambda(lambda, qubits, state);
+  kernel_.apply_lambda(data_size_, lambda, qubits);
 }
 
 //------------------------------------------------------------------------------
@@ -759,12 +516,10 @@ void QubitVector<data_t>::initialize_component(const reg_t &qubits, const cvecto
 
 template <typename data_t>
 void QubitVector<data_t>::zero() {
-  const int_t END = data_size_;    // end for k loop
-
-#pragma omp parallel for if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-  for (int_t k = 0; k < END; ++k) {
-    data_[k] = 0.0;
-  }
+  auto lambda = [&](const int_t k)->void {
+    data_[k] = data_t(0.0);
+  };
+  kernel_.apply_lambda(data_size_, lambda);
 }
 
 template <typename data_t>
@@ -781,7 +536,7 @@ void QubitVector<data_t>::set_num_qubits(size_t num_qubits) {
 
   size_t prev_num_qubits = num_qubits_;
   num_qubits_ = num_qubits;
-  data_size_ = BITS[num_qubits];
+  data_size_ = Index::BITS[num_qubits];
 
   if (checkpoint_) {
     free(checkpoint_);
@@ -816,10 +571,8 @@ void QubitVector<data_t>::checkpoint() {
   if (!checkpoint_)
     checkpoint_ = reinterpret_cast<std::complex<data_t>*>(malloc(sizeof(std::complex<data_t>) * data_size_));
 
-  const int_t END = data_size_;    // end for k loop
-  #pragma omp parallel for if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-  for (int_t k = 0; k < END; ++k)
-    checkpoint_[k] = data_[k];
+  auto lambda = [&](int_t k) {checkpoint_[k] = data_[k];};
+  kernel_.apply_lambda(data_size_, lambda);
 }
 
 
@@ -837,11 +590,8 @@ void QubitVector<data_t>::revert(bool keep) {
     data_ = checkpoint_;
     checkpoint_ = nullptr;
   } else {
-    // Otherwise we need to copy data
-    const int_t END = data_size_;    // end for k loop
-#pragma omp parallel for if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-    for (int_t k = 0; k < END; ++k)
-      data_[k] = checkpoint_[k];
+    auto lambda = [&](int_t k) {data_[k] = checkpoint_[k];};
+    kernel_.apply_lambda(data_size_, lambda);
   }
 }
 
@@ -857,7 +607,9 @@ std::complex<double> QubitVector<data_t>::inner_product() const {
     val_re += std::real(z);
     val_im += std::imag(z);
   };
-  return apply_reduction_lambda(lambda);
+  std::complex<double> accum = 0.0;
+  kernel_.apply_reduction_lambda(data_size_, accum, lambda);
+  return accum;
 }
 
 //------------------------------------------------------------------------------
@@ -878,12 +630,8 @@ void QubitVector<data_t>::initialize_from_vector(const cvector_t<double> &statev
                         std::to_string(statevec.size()) + ")";
     throw std::runtime_error(error);
   }
-
-  const int_t END = data_size_;    // end for k loop
-
-#pragma omp parallel for if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-  for (int_t k = 0; k < END; ++k)
-    data_[k] = statevec[k];
+  auto lambda = [&](int_t k) {data_[k] = statevec[k];};
+  kernel_.apply_lambda(data_size_, lambda);
 }
 
 template <typename data_t>
@@ -893,12 +641,8 @@ void QubitVector<data_t>::initialize_from_data(const std::complex<data_t>* state
                         std::to_string(data_size_) + "!=" + std::to_string(num_states) + ")";
     throw std::runtime_error(error);
   }
-
-  const int_t END = data_size_;    // end for k loop
-
-#pragma omp parallel for if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-  for (int_t k = 0; k < END; ++k)
-    data_[k] = statevec[k];
+  auto lambda = [&](int_t k) {data_[k] = statevec[k];};
+  kernel_.apply_lambda(data_size_, lambda);
 }
 
 
@@ -912,183 +656,22 @@ template <typename data_t>
 void QubitVector<data_t>::set_omp_threads(int n) {
   if (n > 0)
     omp_threads_ = n;
+
+  // Set threads of OMP Kernel
+  kernel_.set_threads(n);
 }
 
 template <typename data_t>
 void QubitVector<data_t>::set_omp_threshold(int n) {
   if (n > 0)
     omp_threshold_ = n;
+  // Set threshold of OMP Kernel
+  kernel_.set_threshold(1ULL << n);
 }
 
 template <typename data_t>
 void QubitVector<data_t>::set_json_chop_threshold(double threshold) {
   json_chop_threshold_ = threshold;
-}
-
-/*******************************************************************************
- *
- * LAMBDA FUNCTION TEMPLATES
- *
- ******************************************************************************/
-
-
-//------------------------------------------------------------------------------
-// State update
-//------------------------------------------------------------------------------
-
-template <typename data_t>
-template<typename Lambda>
-void QubitVector<data_t>::apply_lambda(Lambda&& func) {
-  const int_t END = data_size_;
-#pragma omp parallel if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-  {
-#pragma omp for
-    for (int_t k = 0; k < END; k++) {
-      std::forward<Lambda>(func)(k);
-    }
-  }
-}
-
-template <typename data_t>
-template<typename Lambda, typename list_t>
-void QubitVector<data_t>::apply_lambda(Lambda&& func, const list_t &qubits) {
-
-  // Error checking
-  #ifdef DEBUG
-  for (const auto &qubit : qubits)
-    check_qubit(qubit);
-  #endif
-
-  const auto NUM_QUBITS = qubits.size();
-  const int_t END = data_size_ >> NUM_QUBITS;
-  auto qubits_sorted = qubits;
-  std::sort(qubits_sorted.begin(), qubits_sorted.end());
-#pragma omp parallel if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-  {
-#pragma omp for
-    for (int_t k = 0; k < END; k++) {
-      // store entries touched by U
-      const auto inds = indexes(qubits, qubits_sorted, k);
-      std::forward<Lambda>(func)(inds);
-    }
-  }
-}
-
-template <typename data_t>
-template<typename Lambda, typename list_t, typename param_t>
-void QubitVector<data_t>::apply_lambda(Lambda&& func,
-                                       const list_t &qubits,
-                                       const param_t &params) {
-
-  // Error checking
-  #ifdef DEBUG
-  for (const auto &qubit : qubits)
-    check_qubit(qubit);
-  #endif
-
-  const auto NUM_QUBITS = qubits.size();
-  const int_t END = data_size_ >> NUM_QUBITS;
-  auto qubits_sorted = qubits;
-  std::sort(qubits_sorted.begin(), qubits_sorted.end());
-
-#pragma omp parallel if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-  {
-#pragma omp for
-    for (int_t k = 0; k < END; k++) {
-      const auto inds = indexes(qubits, qubits_sorted, k);
-      std::forward<Lambda>(func)(inds, params);
-    }
-  }
-}
-
-
-//------------------------------------------------------------------------------
-// Reduction Lambda
-//------------------------------------------------------------------------------
-
-template <typename data_t>
-template<typename Lambda>
-std::complex<double> QubitVector<data_t>::apply_reduction_lambda(Lambda &&func) const {
-  // Reduction variables
-  double val_re = 0.;
-  double val_im = 0.;
-  const int_t END = data_size_;
-#pragma omp parallel reduction(+:val_re, val_im) if (num_qubits_ > omp_threshold_ && omp_threads_ > 1)         \
-                                               num_threads(omp_threads_)
-  {
-#pragma omp for
-    for (int_t k = 0; k < END; k++) {
-        std::forward<Lambda>(func)(k, val_re, val_im);
-      }
-  } // end omp parallel
-  return std::complex<double>(val_re, val_im);
-}
-
-
-template <typename data_t>
-template<typename Lambda, typename list_t>
-std::complex<double>
-QubitVector<data_t>::apply_reduction_lambda(Lambda&& func,
-                                            const list_t &qubits) const {
-
-  // Error checking
-  #ifdef DEBUG
-  for (const auto &qubit : qubits)
-    check_qubit(qubit);
-  #endif
-
-  const size_t NUM_QUBITS =  qubits.size();
-  const int_t END = data_size_ >> NUM_QUBITS;
-  auto qubits_sorted = qubits;
-  std::sort(qubits_sorted.begin(), qubits_sorted.end());
-
-  // Reduction variables
-  double val_re = 0.;
-  double val_im = 0.;
-#pragma omp parallel reduction(+:val_re, val_im) if (num_qubits_ > omp_threshold_ && omp_threads_ > 1)         \
-                                               num_threads(omp_threads_)
-  {
-#pragma omp for
-    for (int_t k = 0; k < END; k++) {
-      const auto inds = indexes(qubits, qubits_sorted, k);
-      std::forward<Lambda>(func)(inds, val_re, val_im);
-    }
-  } // end omp parallel
-  return std::complex<double>(val_re, val_im);
-}
-
-
-template <typename data_t>
-template<typename Lambda, typename list_t, typename param_t>
-std::complex<double>
-QubitVector<data_t>::apply_reduction_lambda(Lambda&& func,
-                                            const list_t &qubits,
-                                            const param_t &params) const {
-
-  const auto NUM_QUBITS = qubits.size();
-  // Error checking
-  #ifdef DEBUG
-  for (const auto &qubit : qubits)
-    check_qubit(qubit);
-  #endif
-
-  const int_t END = data_size_ >> NUM_QUBITS;
-  auto qubits_sorted = qubits;
-  std::sort(qubits_sorted.begin(), qubits_sorted.end());
-
-  // Reduction variables
-  double val_re = 0.;
-  double val_im = 0.;
-#pragma omp parallel reduction(+:val_re, val_im) if (num_qubits_ > omp_threshold_ && omp_threads_ > 1)         \
-                                               num_threads(omp_threads_)
-  {
-#pragma omp for
-    for (int_t k = 0; k < END; k++) {
-      const auto inds = indexes(qubits, qubits_sorted, k);
-      std::forward<Lambda>(func)(inds, params, val_re, val_im);
-    }
-  } // end omp parallel
-  return std::complex<double>(val_re, val_im);
 }
 
 
@@ -1098,237 +681,60 @@ QubitVector<data_t>::apply_reduction_lambda(Lambda&& func,
  *
  ******************************************************************************/
 template <typename data_t>
-void QubitVector<data_t>::apply_matrix(const reg_t &qubits,
+void QubitVector<data_t>::apply_matrix(const Index::reg_t &qubits,
                                        const cvector_t<double> &mat) {
-
-  const size_t N = qubits.size();
-  // Error checking
-  #ifdef DEBUG
-  check_vector(mat, 2 * N);
-  #endif
-
-  // Static array optimized lambda functions
-  switch (N) {
-    case 1:
-      apply_matrix(qubits[0], mat);
-      return;
-    case 2: {
-      // Lambda function for 2-qubit matrix multiplication
-      auto lambda = [&](const areg_t<4> &inds, const cvector_t<data_t> &_mat)->void {
-        std::array<std::complex<data_t>, 4> cache;
-        for (size_t i = 0; i < 4; i++) {
-          const auto ii = inds[i];
-          cache[i] = data_[ii];
-          data_[ii] = 0.;
-        }
-        // update state vector
-        for (size_t i = 0; i < 4; i++)
-          for (size_t j = 0; j < 4; j++)
-            data_[inds[i]] += _mat[i + 4 * j] * cache[j];
-      };
-      apply_lambda(lambda, areg_t<2>({{qubits[0], qubits[1]}}), convert(mat));
-      return;
-    }
-    case 3: {
-      // Lambda function for 3-qubit matrix multiplication
-      auto lambda = [&](const areg_t<8> &inds, const cvector_t<data_t> &_mat)->void {
-        std::array<std::complex<data_t>, 8> cache;
-        for (size_t i = 0; i < 8; i++) {
-          const auto ii = inds[i];
-          cache[i] = data_[ii];
-          data_[ii] = 0.;
-        }
-        // update state vector
-        for (size_t i = 0; i < 8; i++)
-          for (size_t j = 0; j < 8; j++)
-            data_[inds[i]] += _mat[i + 8 * j] * cache[j];
-      };
-      apply_lambda(lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}), convert(mat));
-      return;
-    }
-    case 4: {
-      // Lambda function for 4-qubit matrix multiplication
-      auto lambda = [&](const areg_t<16> &inds, const cvector_t<data_t> &_mat)->void {
-        std::array<std::complex<data_t>, 16> cache;
-        for (size_t i = 0; i < 16; i++) {
-          const auto ii = inds[i];
-          cache[i] = data_[ii];
-          data_[ii] = 0.;
-        }
-        // update state vector
-        for (size_t i = 0; i < 16; i++)
-          for (size_t j = 0; j < 16; j++)
-            data_[inds[i]] += _mat[i + 16 * j] * cache[j];
-      };
-      apply_lambda(lambda, areg_t<4>({{qubits[0], qubits[1], qubits[2], qubits[3]}}), convert(mat));
-      return;
-    }
-    default: {
-      // Lambda function for N-qubit matrix multiplication
-      auto lambda = [&](const indexes_t &inds, const cvector_t<data_t> &_mat)->void {
-        const uint_t DIM = BITS[N];
-        auto cache = std::make_unique<std::complex<data_t>[]>(DIM);
-        for (size_t i = 0; i < DIM; i++) {
-          const auto ii = inds[i];
-          cache[i] = data_[ii];
-          data_[ii] = 0.;
-        }
-        // update state vector
-        for (size_t i = 0; i < DIM; i++)
-          for (size_t j = 0; j < DIM; j++)
-            data_[inds[i]] += _mat[i + DIM * j] * cache[j];
-      };
-      apply_lambda(lambda, qubits, convert(mat));
-    }
-  } // end switch
+  kernel_.apply_matrix<data_t>(data_, data_size_, mat, qubits);
 }
 
-template <typename data_t>
-void QubitVector<data_t>::apply_multiplexer(const reg_t &control_qubits,
-                                            const reg_t &target_qubits,
-                                            const cvector_t<double>  &mat) {
-  
-  auto lambda = [&](const indexes_t &inds, const cvector_t<data_t> &_mat)->void {
-    // General implementation
-    const size_t control_count = control_qubits.size();
-    const size_t target_count  = target_qubits.size();
-    const uint_t DIM = BITS[(target_count+control_count)];
-    const uint_t columns = BITS[target_count];
-    const uint_t blocks = BITS[control_count];
-    // Lambda function for stacked matrix multiplication
-    auto cache = std::make_unique<std::complex<data_t>[]>(DIM);
-    for (uint_t i = 0; i < DIM; i++) {
-      const auto ii = inds[i];
-      cache[i] = data_[ii];
-      data_[ii] = 0.;
-    }
-    // update state vector
-    for (uint_t b = 0; b < blocks; b++)
-      for (uint_t i = 0; i < columns; i++)
-        for (uint_t j = 0; j < columns; j++)
-	{
-	  data_[inds[i+b*columns]] += _mat[i+b*columns + DIM * j] * cache[b*columns+j];
-	}
-  };
-  
-  // Use the lambda function
-  auto qubits = target_qubits;
-  for (const auto &q : control_qubits) {qubits.push_back(q);}
-  apply_lambda(lambda, qubits, convert(mat));
-}
 
 template <typename data_t>
-void QubitVector<data_t>::apply_diagonal_matrix(const reg_t &qubits,
+void QubitVector<data_t>::apply_diagonal_matrix(const Index::reg_t &qubits,
                                                 const cvector_t<double> &diag) {
 
-  // Error checking
-  #ifdef DEBUG
-  check_vector(diag, qubits.size());
-  #endif
-
-  if (qubits.size() == 1) {
-    apply_diagonal_matrix(qubits[0], diag);
-    return;
-  }
-
-  auto lambda = [&](const areg_t<2> &inds, const cvector_t<data_t> &_diag)->void {
-    for (int_t i = 0; i < 2; ++i) {
-      const int_t k = inds[i];
-      int_t iv = 0;
-      for (int_t j = 0; j < qubits.size(); j++)
-        if ((k & (1ULL << qubits[j])) != 0)
-          iv += (1 << j);
-      if (_diag[iv] != (data_t) 1.0)
-        data_[k] *= _diag[iv];
-    }
-  };
-  apply_lambda(lambda, areg_t<1>({{qubits[0]}}), convert(diag));
+  kernel_.apply_diagonal_matrix<data_t>(data_, data_size_, diag, qubits);
 }
 
+
 template <typename data_t>
-void QubitVector<data_t>::apply_permutation_matrix(const reg_t& qubits,
+void QubitVector<data_t>::apply_permutation_matrix(const Index::reg_t& qubits,
                                                    const std::vector<std::pair<uint_t, uint_t>> &pairs) {
-  const size_t N = qubits.size();
+  kernel_.apply_permutation_matrix<data_t>(data_, data_size_, pairs, qubits);
+}
 
-  // Error checking
-  #ifdef DEBUG
-  check_vector(diag, N);
-  #endif
 
-  switch (N) {
-    case 1: {
-      // Lambda function for permutation matrix
-      auto lambda = [&](const areg_t<2> &inds)->void {
-        for (const auto& p : pairs) {
-          std::swap(data_[inds[p.first]], data_[inds[p.second]]);
-        }
-      };
-      apply_lambda(lambda, areg_t<1>({{qubits[0]}}));
-      return;
-    }
-    case 2: {
-      // Lambda function for permutation matrix
-      auto lambda = [&](const areg_t<4> &inds)->void {
-        for (const auto& p : pairs) {
-          std::swap(data_[inds[p.first]], data_[inds[p.second]]);
-        }
-      };
-      apply_lambda(lambda, areg_t<2>({{qubits[0], qubits[1]}}));
-      return;
-    }
-    case 3: {
-      // Lambda function for permutation matrix
-      auto lambda = [&](const areg_t<8> &inds)->void {
-        for (const auto& p : pairs) {
-          std::swap(data_[inds[p.first]], data_[inds[p.second]]);
-        }
-      };
-      apply_lambda(lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}));
-      return;
-    }
-    case 4: {
-      // Lambda function for permutation matrix
-      auto lambda = [&](const areg_t<16> &inds)->void {
-        for (const auto& p : pairs) {
-          std::swap(data_[inds[p.first]], data_[inds[p.second]]);
-        }
-      };
-      apply_lambda(lambda, areg_t<4>({{qubits[0], qubits[1], qubits[2], qubits[3]}}));
-      return;
-    }
-    case 5: {
-      // Lambda function for permutation matrix
-      auto lambda = [&](const areg_t<32> &inds)->void {
-        for (const auto& p : pairs) {
-          std::swap(data_[inds[p.first]], data_[inds[p.second]]);
-        }
-      };
-      apply_lambda(lambda, areg_t<5>({{qubits[0], qubits[1], qubits[2],
-                                       qubits[3], qubits[4]}}));
-      return;
-    }
-    case 6: {
-      // Lambda function for permutation matrix
-      auto lambda = [&](const areg_t<64> &inds)->void {
-        for (const auto& p : pairs) {
-          std::swap(data_[inds[p.first]], data_[inds[p.second]]);
-        }
-      };
-      apply_lambda(lambda, areg_t<6>({{qubits[0], qubits[1], qubits[2],
-                                       qubits[3], qubits[4], qubits[5]}}));
-      return;
-    }
-    default: {
-      // Lambda function for permutation matrix
-      auto lambda = [&](const indexes_t &inds)->void {
-        for (const auto& p : pairs) {
-          std::swap(data_[inds[p.first]], data_[inds[p.second]]);
-        }
-      };
-      // Use the lambda function
-      apply_lambda(lambda, qubits);
-    }
-  } // end switch
+template <typename data_t>
+void QubitVector<data_t>::apply_multiplexer(const Index::reg_t &control_qubits,
+                                            const Index::reg_t &target_qubits,
+                                            const cvector_t<double>  &mat) {
+  auto lambda = [&](const Index::indexes_t &inds) -> void {
+  // General implementation
+  const size_t control_count = control_qubits.size();
+  const size_t target_count = target_qubits.size();
+  const uint_t DIM = Index::BITS[(target_count + control_count)];
+  const uint_t columns = Index::BITS[target_count];
+  const uint_t blocks = Index::BITS[control_count];
+  // Lambda function for stacked matrix multiplication
+  auto cache = std::make_unique<std::complex<data_t>[]>(DIM);
+  for (uint_t i = 0; i < DIM; i++) {
+    const auto ii = inds[i];
+    cache[i] = data_[ii];
+    data_[ii] = 0.;
+  }
+  // update state vector
+  for (uint_t b = 0; b < blocks; b++)
+    for (uint_t i = 0; i < columns; i++)
+      for (uint_t j = 0; j < columns; j++) {
+        data_[inds[i + b * columns]] += kernel_.cmul(
+            cache[b * columns + j], mat[i + b * columns + DIM * j]);
+      }
+  };
+
+  // Use the lambda function
+  auto qubits = target_qubits;
+  for (const auto &q : control_qubits) {
+    qubits.push_back(q);
+  }
+  kernel_.apply_lambda(data_size_, lambda, qubits);
 }
 
 
@@ -1343,179 +749,181 @@ void QubitVector<data_t>::apply_permutation_matrix(const reg_t& qubits,
 //------------------------------------------------------------------------------
 
 template <typename data_t>
-void QubitVector<data_t>::apply_mcx(const reg_t &qubits) {
+void QubitVector<data_t>::apply_mcx(const Index::reg_t &qubits) {
   // Calculate the permutation positions for the last qubit.
   const size_t N = qubits.size();
-  const size_t pos0 = MASKS[N - 1];
-  const size_t pos1 = MASKS[N];
+  const size_t pos0 = Index::MASKS[N - 1];
+  const size_t pos1 = Index::MASKS[N];
 
   switch (N) {
     case 1: {
       // Lambda function for X gate
-      auto lambda = [&](const areg_t<2> &inds)->void {
+      auto lambda = [&](const Index::areg_t<2> &inds)->void {
         std::swap(data_[inds[pos0]], data_[inds[pos1]]);
       };
-      apply_lambda(lambda, areg_t<1>({{qubits[0]}}));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<1>({{qubits[0]}}));
       return;
     }
     case 2: {
       // Lambda function for CX gate
-      auto lambda = [&](const areg_t<4> &inds)->void {
+      auto lambda = [&](const Index::areg_t<4> &inds)->void {
         std::swap(data_[inds[pos0]], data_[inds[pos1]]);
       };
-      apply_lambda(lambda, areg_t<2>({{qubits[0], qubits[1]}}));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<2>({{qubits[0], qubits[1]}}));
       return;
     }
     case 3: {
       // Lambda function for Toffli gate
-      auto lambda = [&](const areg_t<8> &inds)->void {
+      auto lambda = [&](const Index::areg_t<8> &inds)->void {
         std::swap(data_[inds[pos0]], data_[inds[pos1]]);
       };
-      apply_lambda(lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}));
       return;
     }
     default: {
       // Lambda function for general multi-controlled X gate
-      auto lambda = [&](const indexes_t &inds)->void {
+      auto lambda = [&](const Index::indexes_t &inds)->void {
         std::swap(data_[inds[pos0]], data_[inds[pos1]]);
       };
-      apply_lambda(lambda, qubits);
+      kernel_.apply_lambda(data_size_, lambda, qubits);
     }
   } // end switch
 }
 
 template <typename data_t>
-void QubitVector<data_t>::apply_mcy(const reg_t &qubits) {
+void QubitVector<data_t>::apply_mcy(const Index::reg_t &qubits) {
   // Calculate the permutation positions for the last qubit.
   const size_t N = qubits.size();
-  const size_t pos0 = MASKS[N - 1];
-  const size_t pos1 = MASKS[N];
+  const size_t pos0 = Index::MASKS[N - 1];
+  const size_t pos1 = Index::MASKS[N];
   const std::complex<data_t> I(0., 1.);
 
   switch (N) {
     case 1: {
       // Lambda function for Y gate
-      auto lambda = [&](const areg_t<2> &inds)->void {
+      auto lambda = [&](const Index::areg_t<2> &inds)->void {
         const std::complex<data_t> cache = data_[inds[pos0]];
         data_[inds[pos0]] = -I * data_[inds[pos1]];
         data_[inds[pos1]] = I * cache;
       };
-      apply_lambda(lambda, areg_t<1>({{qubits[0]}}));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<1>({{qubits[0]}}));
       return;
     }
     case 2: {
       // Lambda function for CY gate
-      auto lambda = [&](const areg_t<4> &inds)->void {
+      auto lambda = [&](const Index::areg_t<4> &inds)->void {
         const std::complex<data_t> cache = data_[inds[pos0]];
         data_[inds[pos0]] = -I * data_[inds[pos1]];
         data_[inds[pos1]] = I * cache;
       };
-      apply_lambda(lambda, areg_t<2>({{qubits[0], qubits[1]}}));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<2>({{qubits[0], qubits[1]}}));
       return;
     }
     case 3: {
       // Lambda function for CCY gate
-      auto lambda = [&](const areg_t<8> &inds)->void {
+      auto lambda = [&](const Index::areg_t<8> &inds)->void {
         const std::complex<data_t> cache = data_[inds[pos0]];
         data_[inds[pos0]] = -I * data_[inds[pos1]];
         data_[inds[pos1]] = I * cache;
       };
-      apply_lambda(lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}));
       return;
     }
     default: {
       // Lambda function for general multi-controlled Y gate
-      auto lambda = [&](const indexes_t &inds)->void {
+      auto lambda = [&](const Index::indexes_t &inds)->void {
         const std::complex<data_t> cache = data_[inds[pos0]];
         data_[inds[pos0]] = -I * data_[inds[pos1]];
         data_[inds[pos1]] = I * cache;
       };
-      apply_lambda(lambda, qubits);
+      kernel_.apply_lambda(data_size_, lambda, qubits);
     }
   } // end switch
 }
 
 template <typename data_t>
-void QubitVector<data_t>::apply_mcswap(const reg_t &qubits) {
+void QubitVector<data_t>::apply_mcswap(const Index::reg_t &qubits) {
   // Calculate the swap positions for the last two qubits.
   // If N = 2 this is just a regular SWAP gate rather than a controlled-SWAP gate.
   const size_t N = qubits.size();
-  const size_t pos0 = MASKS[N - 1];
-  const size_t pos1 = pos0 + BITS[N - 2];
+  const size_t pos0 = Index::MASKS[N - 1];
+  const size_t pos1 = pos0 + Index::BITS[N - 2];
 
   switch (N) {
     case 2: {
       // Lambda function for SWAP gate
-      auto lambda = [&](const areg_t<4> &inds)->void {
+      auto lambda = [&](const Index::areg_t<4> &inds)->void {
         std::swap(data_[inds[pos0]], data_[inds[pos1]]);
       };
-      apply_lambda(lambda, areg_t<2>({{qubits[0], qubits[1]}}));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<2>({{qubits[0], qubits[1]}}));
       return;
     }
     case 3: {
       // Lambda function for C-SWAP gate
-      auto lambda = [&](const areg_t<8> &inds)->void {
+      auto lambda = [&](const Index::areg_t<8> &inds)->void {
         std::swap(data_[inds[pos0]], data_[inds[pos1]]);
       };
-      apply_lambda(lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}));
       return;
     }
     default: {
       // Lambda function for general multi-controlled SWAP gate
-      auto lambda = [&](const indexes_t &inds)->void {
+      auto lambda = [&](const Index::indexes_t &inds)->void {
         std::swap(data_[inds[pos0]], data_[inds[pos1]]);
       };
-      apply_lambda(lambda, qubits);
+      kernel_.apply_lambda(data_size_, lambda, qubits);
     }
   } // end switch
 }
 
 template <typename data_t>
-void QubitVector<data_t>::apply_mcphase(const reg_t &qubits, const std::complex<double> phase) {
+void QubitVector<data_t>::apply_mcphase(const Index::reg_t &qubits, const std::complex<double> _phase) {
   const size_t N = qubits.size();
+  // Cast phase to correct data type
+  const auto phase = std::complex<data_t>(_phase);
   switch (N) {
     case 1: {
       // Lambda function for arbitrary Phase gate with diagonal [1, phase]
-      auto lambda = [&](const areg_t<2> &inds)->void {
+      auto lambda = [&](const Index::areg_t<2> &inds)->void {
         data_[inds[1]] *= phase;
       };
-      apply_lambda(lambda, areg_t<1>({{qubits[0]}}));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<1>({{qubits[0]}}));
       return;
     }
     case 2: {
       // Lambda function for CPhase gate with diagonal [1, 1, 1, phase]
-      auto lambda = [&](const areg_t<4> &inds)->void {
+      auto lambda = [&](const Index::areg_t<4> &inds)->void {
         data_[inds[3]] *= phase;
       };
-      apply_lambda(lambda, areg_t<2>({{qubits[0], qubits[1]}}));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<2>({{qubits[0], qubits[1]}}));
       return;
     }
     case 3: {
-      auto lambda = [&](const areg_t<8> &inds)->void {
+      auto lambda = [&](const Index::areg_t<8> &inds)->void {
          data_[inds[7]] *= phase;
       };
-      apply_lambda(lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}));
       return;
     }
     default: {
       // Lambda function for general multi-controlled Phase gate
       // with diagonal [1, ..., 1, phase]
-      auto lambda = [&](const indexes_t &inds)->void {
-         data_[inds[MASKS[N]]] *= phase;
+      auto lambda = [&](const Index::indexes_t &inds)->void {
+         data_[inds[Index::MASKS[N]]] *= phase;
       };
-      apply_lambda(lambda, qubits);
+      kernel_.apply_lambda(data_size_, lambda, qubits);
     }
   } // end switch
 }
 
 template <typename data_t>
-void QubitVector<data_t>::apply_mcu(const reg_t &qubits,
+void QubitVector<data_t>::apply_mcu(const Index::reg_t &qubits,
                                     const cvector_t<double> &mat) {
 
   // Calculate the permutation positions for the last qubit.
   const size_t N = qubits.size();
-  const size_t pos0 = MASKS[N - 1];
-  const size_t pos1 = MASKS[N];
+  const size_t pos0 = Index::MASKS[N - 1];
+  const size_t pos1 = Index::MASKS[N];
 
   // Check if matrix is actually diagonal and if so use 
   // diagonal matrix lambda function
@@ -1532,37 +940,34 @@ void QubitVector<data_t>::apply_mcu(const reg_t &qubits,
     switch (N) {
       case 1: {
         // If N=1 this is just a single-qubit matrix
-        apply_diagonal_matrix(qubits[0], diag);
+        kernel_.apply_diagonal_matrix<data_t>(data_, data_size_, diag, qubits[0]);
         return;
       }
       case 2: {
         // Lambda function for CU gate
-        auto lambda = [&](const areg_t<4> &inds,
-                          const cvector_t<data_t> &_diag)->void {
-          data_[inds[pos0]] = _diag[0] * data_[inds[pos0]];
-          data_[inds[pos1]] = _diag[1] * data_[inds[pos1]];
+        auto lambda = [&](const Index::areg_t<4> &inds)->void {
+          data_[inds[pos0]] = kernel_.cmul(data_[inds[pos0]], diag[0]);
+          data_[inds[pos1]] = kernel_.cmul(data_[inds[pos1]], diag[1]);
         };
-        apply_lambda(lambda, areg_t<2>({{qubits[0], qubits[1]}}), convert(diag));
+        kernel_.apply_lambda(data_size_, lambda, areg_t<2>({{qubits[0], qubits[1]}}));
         return;
       }
       case 3: {
         // Lambda function for CCU gate
-        auto lambda = [&](const areg_t<8> &inds,
-                          const cvector_t<data_t> &_diag)->void {
-          data_[inds[pos0]] = _diag[0] * data_[inds[pos0]];
-          data_[inds[pos1]] = _diag[1] * data_[inds[pos1]];
+        auto lambda = [&](const Index::areg_t<8> &inds)->void {
+          data_[inds[pos0]] = kernel_.cmul(data_[inds[pos0]], diag[0]);
+          data_[inds[pos1]] = kernel_.cmul(data_[inds[pos1]], diag[1]);
         };
-        apply_lambda(lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}), convert(diag));
+        kernel_.apply_lambda(data_size_, lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}));
         return;
       }
       default: {
         // Lambda function for general multi-controlled U gate
-        auto lambda = [&](const indexes_t &inds,
-                          const cvector_t<data_t> &_diag)->void {
-          data_[inds[pos0]] = _diag[0] * data_[inds[pos0]];
-          data_[inds[pos1]] = _diag[1] * data_[inds[pos1]];
+        auto lambda = [&](const Index::indexes_t &inds)->void {
+          data_[inds[pos0]] = kernel_.cmul(data_[inds[pos0]], diag[0]);
+          data_[inds[pos1]] = kernel_.cmul(data_[inds[pos1]], diag[1]);
         };
-        apply_lambda(lambda, qubits, convert(diag));
+        kernel_.apply_lambda(data_size_, lambda, qubits);
         return;
       }
     } // end switch
@@ -1572,40 +977,37 @@ void QubitVector<data_t>::apply_mcu(const reg_t &qubits,
   switch (N) {
     case 1: {
       // If N=1 this is just a single-qubit matrix
-      apply_matrix(qubits[0], mat);
+      kernel_.apply_matrix<data_t>(data_, data_size_, mat, qubits[0]);
       return;
     }
     case 2: {
       // Lambda function for CU gate
-      auto lambda = [&](const areg_t<4> &inds,
-                        const cvector_t<data_t> &_mat)->void {
+      auto lambda = [&](const Index::areg_t<4> &inds)->void {
       const auto cache = data_[inds[pos0]];
-      data_[inds[pos0]] = _mat[0] * data_[inds[pos0]] + _mat[2] * data_[inds[pos1]];
-      data_[inds[pos1]] = _mat[1] * cache + _mat[3] * data_[inds[pos1]];
+      data_[inds[pos0]] = kernel_.cmul(data_[inds[pos0]], mat[0]) + kernel_.cmul(data_[inds[pos1]], mat[2]);
+      data_[inds[pos1]] = kernel_.cmul(cache, mat[1]) + kernel_.cmul(data_[inds[pos1]], mat[3]);
       };
-      apply_lambda(lambda, areg_t<2>({{qubits[0], qubits[1]}}), convert(mat));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<2>({{qubits[0], qubits[1]}}));
       return;
     }
     case 3: {
       // Lambda function for CCU gate
-      auto lambda = [&](const areg_t<8> &inds,
-                        const cvector_t<data_t> &_mat)->void {
+      auto lambda = [&](const Index::areg_t<8> &inds)->void {
       const auto cache = data_[inds[pos0]];
-      data_[inds[pos0]] = _mat[0] * data_[inds[pos0]] + _mat[2] * data_[inds[pos1]];
-      data_[inds[pos1]] = _mat[1] * cache + _mat[3] * data_[inds[pos1]];
+      data_[inds[pos0]] = kernel_.cmul(data_[inds[pos0]], mat[0]) + kernel_.cmul(data_[inds[pos1]], mat[2]);
+      data_[inds[pos1]] = kernel_.cmul(cache, mat[1]) + kernel_.cmul(data_[inds[pos1]], mat[3]);
       };
-      apply_lambda(lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}), convert(mat));
+      kernel_.apply_lambda(data_size_, lambda, areg_t<3>({{qubits[0], qubits[1], qubits[2]}}));
       return;
     }
     default: {
       // Lambda function for general multi-controlled U gate
-      auto lambda = [&](const indexes_t &inds,
-                        const cvector_t<data_t> &_mat)->void {
+      auto lambda = [&](const Index::indexes_t &inds)->void {
       const auto cache = data_[inds[pos0]];
-      data_[inds[pos0]] = _mat[0] * data_[inds[pos0]] + _mat[2] * data_[inds[pos1]];
-      data_[inds[pos1]] = _mat[1] * cache + _mat[3] * data_[inds[pos1]];
+      data_[inds[pos0]] = kernel_.cmul(data_[inds[pos0]], mat[0]) + kernel_.cmul(data_[inds[pos1]], mat[2]);
+      data_[inds[pos1]] = kernel_.cmul(cache, mat[1]) + kernel_.cmul(data_[inds[pos1]], mat[3]);
       };
-      apply_lambda(lambda, qubits, convert(mat));
+      kernel_.apply_lambda(data_size_, lambda, qubits);
       return;
     }
   } // end switch
@@ -1618,171 +1020,13 @@ void QubitVector<data_t>::apply_mcu(const reg_t &qubits,
 template <typename data_t>
 void QubitVector<data_t>::apply_matrix(const uint_t qubit,
                                        const cvector_t<double>& mat) {
-
-  // Check if matrix is diagonal and if so use optimized lambda
-  if (mat[1] == 0.0 && mat[2] == 0.0) {
-    const cvector_t<double> diag = {{mat[0], mat[3]}};
-    apply_diagonal_matrix(qubit, diag);
-    return;
-  }
-  
-  // Convert qubit to array register for lambda functions
-  areg_t<1> qubits = {{qubit}};
-
-  // Check if anti-diagonal matrix and if so use optimized lambda
-  if(mat[0] == 0.0 && mat[3] == 0.0) {
-    if (mat[1] == 1.0 && mat[2] == 1.0) {
-      // X-matrix
-      auto lambda = [&](const areg_t<2> &inds)->void {
-        std::swap(data_[inds[0]], data_[inds[1]]);
-      };
-      apply_lambda(lambda, qubits);
-      return;
-    }
-    if (mat[2] == 0.0) {
-      // Non-unitary projector
-      // possibly used in measure/reset/kraus update
-      auto lambda = [&](const areg_t<2> &inds,
-                        const cvector_t<data_t> &_mat)->void {
-        data_[inds[1]] = _mat[1] * data_[inds[0]];
-        data_[inds[0]] = 0.0;
-      };
-      apply_lambda(lambda, qubits, convert(mat));
-      return;
-    }
-    if (mat[1] == 0.0) {
-      // Non-unitary projector
-      // possibly used in measure/reset/kraus update
-      auto lambda = [&](const areg_t<2> &inds,
-                        const cvector_t<data_t> &_mat)->void {
-        data_[inds[0]] = _mat[2] * data_[inds[1]];
-        data_[inds[1]] = 0.0;
-      };
-      apply_lambda(lambda, qubits, convert(mat));
-      return;
-    }
-    // else we have a general anti-diagonal matrix
-    auto lambda = [&](const areg_t<2> &inds,
-                      const cvector_t<data_t> &_mat)->void {
-      const std::complex<data_t> cache = data_[inds[0]];
-      data_[inds[0]] = _mat[2] * data_[inds[1]];
-      data_[inds[1]] = _mat[1] * cache;
-    };
-    apply_lambda(lambda, qubits, convert(mat));
-    return;
-  }
-  // Otherwise general single-qubit matrix multiplication
-  auto lambda = [&](const areg_t<2> &inds, const cvector_t<data_t> &_mat)->void {
-    const auto cache = data_[inds[0]];
-    data_[inds[0]] = _mat[0] * cache + _mat[2] * data_[inds[1]];
-    data_[inds[1]] = _mat[1] * cache + _mat[3] * data_[inds[1]];
-  };
-  apply_lambda(lambda, qubits, convert(mat));
+  kernel_.apply_matrix<data_t>(data_, data_size_, mat, qubit);
 }
 
 template <typename data_t>
 void QubitVector<data_t>::apply_diagonal_matrix(const uint_t qubit,
                                                 const cvector_t<double>& diag) {
-
-  // TODO: This should be changed so it isn't checking doubles with ==
-  if (diag[0] == 1.0) {  // [[1, 0], [0, z]] matrix
-    if (diag[1] == 1.0)
-      return; // Identity
-
-    if (diag[1] == std::complex<double>(0., -1.)) { // [[1, 0], [0, -i]]
-      auto lambda = [&](const areg_t<2> &inds,
-                        const cvector_t<data_t> &_mat)->void {
-        const auto k = inds[1];
-        double cache = data_[k].imag();
-        data_[k].imag(data_[k].real() * -1.);
-        data_[k].real(cache);
-      };
-      apply_lambda(lambda, areg_t<1>({{qubit}}), convert(diag));
-      return;
-    }
-    if (diag[1] == std::complex<double>(0., 1.)) {
-      // [[1, 0], [0, i]]
-      auto lambda = [&](const areg_t<2> &inds,
-                        const cvector_t<data_t> &_mat)->void {
-        const auto k = inds[1];
-        double cache = data_[k].imag();
-        data_[k].imag(data_[k].real());
-        data_[k].real(cache * -1.);
-      };
-      apply_lambda(lambda, areg_t<1>({{qubit}}), convert(diag));
-      return;
-    } 
-    if (diag[0] == 0.0) {
-      // [[1, 0], [0, 0]]
-      auto lambda = [&](const areg_t<2> &inds,
-                        const cvector_t<data_t> &_mat)->void {
-        data_[inds[1]] = 0.0;
-      };
-      apply_lambda(lambda, areg_t<1>({{qubit}}), convert(diag));
-      return;
-    } 
-    // general [[1, 0], [0, z]]
-    auto lambda = [&](const areg_t<2> &inds,
-                      const cvector_t<data_t> &_mat)->void {
-      const auto k = inds[1];
-      data_[k] *= _mat[1];
-    };
-    apply_lambda(lambda, areg_t<1>({{qubit}}), convert(diag));
-    return;
-  } else if (diag[1] == 1.0) {
-    // [[z, 0], [0, 1]] matrix
-    if (diag[0] == std::complex<double>(0., -1.)) {
-      // [[-i, 0], [0, 1]]
-      auto lambda = [&](const areg_t<2> &inds,
-                        const cvector_t<data_t> &_mat)->void {
-        const auto k = inds[1];
-        double cache = data_[k].imag();
-        data_[k].imag(data_[k].real() * -1.);
-        data_[k].real(cache);
-      };
-      apply_lambda(lambda, areg_t<1>({{qubit}}), convert(diag));
-      return;
-    } 
-    if (diag[0] == std::complex<double>(0., 1.)) {
-      // [[i, 0], [0, 1]]
-      auto lambda = [&](const areg_t<2> &inds,
-                        const cvector_t<data_t> &_mat)->void {
-        const auto k = inds[1];
-        double cache = data_[k].imag();
-        data_[k].imag(data_[k].real());
-        data_[k].real(cache * -1.);
-      };
-      apply_lambda(lambda, areg_t<1>({{qubit}}), convert(diag));
-      return;
-    } 
-    if (diag[0] == 0.0) {
-      // [[0, 0], [0, 1]]
-      auto lambda = [&](const areg_t<2> &inds,
-                        const cvector_t<data_t> &_mat)->void {
-        data_[inds[0]] = 0.0;
-      };
-      apply_lambda(lambda, areg_t<1>({{qubit}}), convert(diag));
-      return;
-    } 
-    // general [[z, 0], [0, 1]]
-    auto lambda = [&](const areg_t<2> &inds,
-                      const cvector_t<data_t> &_mat)->void {
-      const auto k = inds[0];
-      data_[k] *= _mat[0];
-    };
-    apply_lambda(lambda, areg_t<1>({{qubit}}), convert(diag));
-    return;
-  } else {
-    // Lambda function for diagonal matrix multiplication
-    auto lambda = [&](const areg_t<2> &inds,
-                      const cvector_t<data_t> &_mat)->void {
-      const auto k0 = inds[0];
-      const auto k1 = inds[1];
-      data_[k0] *= _mat[0];
-      data_[k1] *= _mat[1];
-    };
-    apply_lambda(lambda, areg_t<1>({{qubit}}), convert(diag));
-  }
+  kernel_.apply_diagonal_matrix<data_t>(data_, data_size_, diag, qubit);
 }
 
 /*******************************************************************************
@@ -1793,20 +1037,16 @@ void QubitVector<data_t>::apply_diagonal_matrix(const uint_t qubit,
 template <typename data_t>
 double QubitVector<data_t>::norm() const {
   // Lambda function for norm
-  auto lambda = [&](int_t k, double &val_re, double &val_im)->void {
-    (void)val_im; // unused
-    val_re += std::real(data_[k] * std::conj(data_[k]));
+  auto lambda = [&](int_t k, double &val)->void {
+    val += std::real(data_[k] * std::conj(data_[k]));
   };
-  return std::real(apply_reduction_lambda(lambda));
+  double accum = 0.0;
+  kernel_.apply_reduction_lambda(data_size_, accum, lambda);
+  return accum;
 }
 
 template <typename data_t>
-double QubitVector<data_t>::norm(const reg_t &qubits, const cvector_t<double> &mat) const {
-
-  // Error checking
-  #ifdef DEBUG
-  check_vector(mat, 2 * qubits.size());
-  #endif
+double QubitVector<data_t>::norm(const Index::reg_t &qubits, const cvector_t<double> &mat) const {
 
   // Static array optimized lambda functions
   switch (qubits.size()) {
@@ -1814,134 +1054,126 @@ double QubitVector<data_t>::norm(const reg_t &qubits, const cvector_t<double> &m
       return norm(qubits[0], mat);
     case 2: {
       // Lambda function for 2-qubit matrix norm
-      auto lambda = [&](const areg_t<4> &inds, const cvector_t<data_t> &_mat,
-                        double &val_re, double &val_im)->void {
-        (void)val_im; // unused
+      auto lambda = [&](const Index::areg_t<4> &inds,  double &val)->void {
         for (size_t i = 0; i < 4; i++) {
           std::complex<data_t> vi = 0;
           for (size_t j = 0; j < 4; j++)
-            vi += _mat[i + 4 * j] * data_[inds[j]];
-          val_re += std::real(vi * std::conj(vi));
+            vi += kernel_.cmul(mat[i + 4 * j], data_[inds[j]]);
+          val += std::real(vi * std::conj(vi));
         }
       };
       areg_t<2> qubits_arr = {{qubits[0], qubits[1]}};
-      return std::real(apply_reduction_lambda(lambda, qubits_arr, convert(mat)));
+      double accum = 0.0;
+      kernel_.apply_reduction_lambda(data_size_, accum, lambda, qubits_arr);
+      return accum;
     }
     case 3: {
       // Lambda function for 3-qubit matrix norm
-      auto lambda = [&](const areg_t<8> &inds, const cvector_t<data_t> &_mat,
-                        double &val_re, double &val_im)->void {
-        (void)val_im; // unused
+      auto lambda = [&](const Index::areg_t<8> &inds, double &val)->void {
         for (size_t i = 0; i < 8; i++) {
           std::complex<data_t> vi = 0;
           for (size_t j = 0; j < 8; j++)
-            vi += _mat[i + 8 * j] * data_[inds[j]];
-          val_re += std::real(vi * std::conj(vi));
+            vi += kernel_.cmul(mat[i + 8 * j], data_[inds[j]]);
+          val += std::real(vi * std::conj(vi));
         }
       };
       areg_t<3> qubits_arr = {{qubits[0], qubits[1], qubits[2]}};
-      return std::real(apply_reduction_lambda(lambda, qubits_arr, convert(mat)));
+      double accum = 0.0;
+      kernel_.apply_reduction_lambda(data_size_, accum, lambda, qubits_arr);
+      return accum;
     }
     case 4: {
       // Lambda function for 4-qubit matrix norm
-      auto lambda = [&](const areg_t<16> &inds, const cvector_t<data_t> &_mat,
-                        double &val_re, double &val_im)->void {
-        (void)val_im; // unused
+      auto lambda = [&](const Index::areg_t<16> &inds, double &val)->void {
         for (size_t i = 0; i < 16; i++) {
           std::complex<data_t> vi = 0;
           for (size_t j = 0; j < 16; j++)
-            vi += _mat[i + 16 * j] * data_[inds[j]];
-          val_re += std::real(vi * std::conj(vi));
+            vi += kernel_.cmul(mat[i + 16 * j], data_[inds[j]]);
+          val += std::real(vi * std::conj(vi));
         }
       };
       areg_t<4> qubits_arr = {{qubits[0], qubits[1], qubits[2], qubits[3]}};
-      return std::real(apply_reduction_lambda(lambda, qubits_arr, convert(mat)));
+      double accum = 0.0;
+      kernel_.apply_reduction_lambda(data_size_, accum, lambda, qubits_arr);
+      return accum;
     }
     default: {
       // Lambda function for N-qubit matrix norm
-      auto lambda = [&](const indexes_t &inds, const cvector_t<data_t> &_mat,
-                        double &val_re, double &val_im)->void {
-        (void)val_im; // unused
-        const uint_t DIM = BITS[qubits.size()];
+      const uint_t DIM = Index::BITS[qubits.size()];
+      auto lambda = [&](const Index::indexes_t &inds, double &val)->void {
         for (size_t i = 0; i < DIM; i++) {
           std::complex<data_t> vi = 0;
           for (size_t j = 0; j < DIM; j++)
-            vi += _mat[i + DIM * j] * data_[inds[j]];
-          val_re += std::real(vi * std::conj(vi));
+            vi += kernel_.cmul(mat[i + DIM * j], data_[inds[j]]);
+          val += std::real(vi * std::conj(vi));
         }
       };
       // Use the lambda function
-      return std::real(apply_reduction_lambda(lambda, qubits, convert(mat)));
+      double accum = 0.0;
+      kernel_.apply_reduction_lambda(data_size_, accum, lambda, qubits);
+      return accum;
     }
   } // end switch
 }
 
 template <typename data_t>
-double QubitVector<data_t>::norm_diagonal(const reg_t &qubits, const cvector_t<double> &mat) const {
-
-  const uint_t N = qubits.size();
-
-  // Error checking
-  #ifdef DEBUG
-  check_vector(mat, N);
-  #endif
+double QubitVector<data_t>::norm_diagonal(const Index::reg_t &qubits, const cvector_t<double> &mat) const {
 
   // Static array optimized lambda functions
-  switch (N) {
+  switch (qubits.size()) {
     case 1:
       return norm_diagonal(qubits[0], mat);
     case 2: {
       // Lambda function for 2-qubit matrix norm
-      auto lambda = [&](const areg_t<4> &inds, const cvector_t<data_t> &_mat,
-                        double &val_re, double &val_im)->void {
-        (void)val_im; // unused
+      auto lambda = [&](const Index::areg_t<4> &inds, double &val)->void {
         for (size_t i = 0; i < 4; i++) {
-          const auto vi = _mat[i] * data_[inds[i]];
-          val_re += std::real(vi * std::conj(vi));
+          const auto vi = kernel_.cmul(mat[i], data_[inds[i]]);
+          val += std::real(vi * std::conj(vi));
         }
       };
       areg_t<2> qubits_arr = {{qubits[0], qubits[1]}};
-      return std::real(apply_reduction_lambda(lambda, qubits_arr, convert(mat)));
+      double accum = 0.0;
+      kernel_.apply_reduction_lambda(data_size_, accum, lambda, qubits_arr);
+      return accum;
     }
     case 3: {
       // Lambda function for 3-qubit matrix norm
-      auto lambda = [&](const areg_t<8> &inds, const cvector_t<data_t> &_mat,
-                        double &val_re, double &val_im)->void {
-        (void)val_im; // unused
+      auto lambda = [&](const Index::areg_t<8> &inds, double &val)->void {
         for (size_t i = 0; i < 8; i++) {
-          const auto vi = _mat[i] * data_[inds[i]];
-          val_re += std::real(vi * std::conj(vi));
+          const auto vi = kernel_.cmul(mat[i], data_[inds[i]]);
+          val += std::real(vi * std::conj(vi));
         }
       };
       areg_t<3> qubits_arr = {{qubits[0], qubits[1], qubits[2]}};
-      return std::real(apply_reduction_lambda(lambda, qubits_arr, convert(mat)));
+      double accum = 0.0;
+      kernel_.apply_reduction_lambda(data_size_, accum, lambda, qubits_arr);
+      return accum;
     }
     case 4: {
       // Lambda function for 4-qubit matrix norm
-      auto lambda = [&](const areg_t<16> &inds, const cvector_t<data_t> &_mat,
-                        double &val_re, double &val_im)->void {
-        (void)val_im; // unused
+      auto lambda = [&](const Index::areg_t<16> &inds, double &val)->void {
         for (size_t i = 0; i < 16; i++) {
-          const auto vi = _mat[i] * data_[inds[i]];
-          val_re += std::real(vi * std::conj(vi));
+          const auto vi = kernel_.cmul(mat[i], data_[inds[i]]);
+          val += std::real(vi * std::conj(vi));
         }
       };
       areg_t<4> qubits_arr = {{qubits[0], qubits[1], qubits[2], qubits[3]}};
-      return std::real(apply_reduction_lambda(lambda, qubits_arr, convert(mat)));
+      double accum = 0.0;
+      kernel_.apply_reduction_lambda(data_size_, accum, lambda, qubits_arr);
+      return accum;
     }
     default: {
       // Lambda function for N-qubit matrix norm
-      const uint_t DIM = BITS[N];
-      auto lambda = [&](const indexes_t &inds, const cvector_t<data_t> &_mat,
-                        double &val_re, double &val_im)->void {
-        (void)val_im; // unused
+      const uint_t DIM = Index::BITS[qubits.size()];
+      auto lambda = [&](const Index::indexes_t &inds, double &val)->void {
         for (size_t i = 0; i < DIM; i++) {
-          const auto vi = _mat[i] * data_[inds[i]];
-          val_re += std::real(vi * std::conj(vi));
+          const auto vi = kernel_.cmul(mat[i], data_[inds[i]]);
+          val += std::real(vi * std::conj(vi));
         }
       };
-      // Use the lambda function
-      return std::real(apply_reduction_lambda(lambda, qubits, convert(mat)));
+      double accum = 0.0;
+      kernel_.apply_reduction_lambda(data_size_, accum, lambda, qubits);
+      return accum;
     }
   } // end switch
 }
@@ -1951,11 +1183,6 @@ double QubitVector<data_t>::norm_diagonal(const reg_t &qubits, const cvector_t<d
 //------------------------------------------------------------------------------
 template <typename data_t>
 double QubitVector<data_t>::norm(const uint_t qubit, const cvector_t<double> &mat) const {
-  // Error handling
-  #ifdef DEBUG
-  check_vector(mat, 2);
-  #endif
-
   // Check if input matrix is diagonal, and if so use diagonal function.
   if (mat[1] == 0.0 && mat[2] == 0.0) {
     const cvector_t<double> diag = {{mat[0], mat[3]}};
@@ -1963,35 +1190,27 @@ double QubitVector<data_t>::norm(const uint_t qubit, const cvector_t<double> &ma
   }
 
   // Lambda function for norm reduction to real value.
-  auto lambda = [&](const areg_t<2> &inds,
-                    const cvector_t<data_t> &_mat,
-                    double &val_re,
-                    double &val_im)->void {
-    (void)val_im; // unused
-    const auto v0 = _mat[0] * data_[inds[0]] + _mat[2] * data_[inds[1]];
-    const auto v1 = _mat[1] * data_[inds[0]] + _mat[3] * data_[inds[1]];
-    val_re += std::real(v0 * std::conj(v0)) + std::real(v1 * std::conj(v1));
+  auto lambda = [&](const Index::areg_t<2> &inds, double &val)->void {
+    auto v0 = kernel_.cmul(mat[0], data_[inds[0]]) + kernel_.cmul(mat[2], data_[inds[1]]);
+    auto v1 = kernel_.cmul(mat[1], data_[inds[0]]) + kernel_.cmul(mat[3], data_[inds[1]]);
+    val += std::real(v0 * std::conj(v0)) + std::real(v1 * std::conj(v1));
   };
-  return std::real(apply_reduction_lambda(lambda, areg_t<1>({{qubit}}), convert(mat)));
+  double accum = 0.0;
+  kernel_.apply_reduction_lambda(data_size_, accum, lambda, areg_t<1>({{qubit}}));
+  return accum;
 }
 
 template <typename data_t>
 double QubitVector<data_t>::norm_diagonal(const uint_t qubit, const cvector_t<double> &mat) const {
-  // Error handling
-  #ifdef DEBUG
-  check_vector(mat, 1);
-  #endif
   // Lambda function for norm reduction to real value.
-  auto lambda = [&](const areg_t<2> &inds,
-                    const cvector_t<data_t> &_mat,
-                    double &val_re,
-                    double &val_im)->void {
-    (void)val_im; // unused
-    const auto v0 = _mat[0] * data_[inds[0]];
-    const auto v1 = _mat[1] * data_[inds[1]];
-    val_re += std::real(v0 * std::conj(v0)) + std::real(v1 * std::conj(v1));
+  auto lambda = [&](const Index::areg_t<2> &inds, double &val)->void {
+    auto v0 = kernel_.cmul(mat[0], data_[inds[0]]);
+    auto v1 = kernel_.cmul(mat[1], data_[inds[1]]);
+    val += std::real(v0 * std::conj(v0)) + std::real(v1 * std::conj(v1));
   };
-  return std::real(apply_reduction_lambda(lambda, areg_t<1>({{qubit}}), convert(mat)));
+  double accum = 0.0;
+  kernel_.apply_reduction_lambda(data_size_, accum, lambda, areg_t<1>({{qubit}}));
+  return accum;
 }
 
 
@@ -2007,27 +1226,18 @@ double QubitVector<data_t>::probability(const uint_t outcome) const {
 
 template <typename data_t>
 std::vector<double> QubitVector<data_t>::probabilities() const {
-  const int_t END = 1LL << num_qubits();
-  std::vector<double> probs(END, 0.);
-#pragma omp parallel for if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
-  for (int_t j=0; j < END; j++) {
-    probs[j] = probability(j);
-  }
+  std::vector<double> probs(data_size_, 0.);
+  auto lambda = [&] (int_t j) {probs[j] = probability(j);};
+  kernel_.apply_lambda(data_size_, lambda);
   return probs;
 }
 
 template <typename data_t>
-std::vector<double> QubitVector<data_t>::probabilities(const reg_t &qubits) const {
+std::vector<double> QubitVector<data_t>::probabilities(const Index::reg_t &qubits) const {
 
   const size_t N = qubits.size();
-  const int_t DIM = BITS[N];
-  const int_t END = BITS[num_qubits() - N];
-
-  // Error checking
-  #ifdef DEBUG
-  for (const auto &qubit : qubits)
-    check_qubit(qubit);
-  #endif
+  const int_t DIM = Index::BITS[N];
+  const int_t END = Index::BITS[num_qubits() - N];
 
   auto qubits_sorted = qubits;
   std::sort(qubits_sorted.begin(), qubits_sorted.end());
@@ -2040,7 +1250,7 @@ std::vector<double> QubitVector<data_t>::probabilities(const reg_t &qubits) cons
     std::vector<data_t> probs_private(DIM, 0.);
     #pragma omp for
       for (int_t k = 0; k < END; k++) {
-        auto idx = indexes(qubits, qubits_sorted, k);
+        auto idx = Index::indexes(qubits, qubits_sorted, k);
         for (int_t m = 0; m < DIM; ++m) {
           probs_private[m] += probability(idx[m]);
         }
@@ -2066,7 +1276,7 @@ reg_t QubitVector<data_t>::sample_measure(const std::vector<double> &rnds) const
   samples.assign(SHOTS, 0);
 
   const int INDEX_SIZE = sample_measure_index_size_;
-  const int_t INDEX_END = BITS[INDEX_SIZE];
+  const int_t INDEX_END = Index::BITS[INDEX_SIZE];
   // Qubit number is below index size, loop over shots
   if (END < INDEX_END) {
     #pragma omp parallel if (num_qubits_ > omp_threshold_ && omp_threads_ > 1) num_threads(omp_threads_)
