@@ -16,6 +16,7 @@
 #define _aer_framework_qobj_hpp_
 
 #include <iostream>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -85,6 +86,10 @@ Qobj::Qobj(const json_t &js) {
   const json_t &circs = js["experiments"];
   const size_t num_circs = circs.size();
 
+  // Get qobj shots
+  uint_t shots = 1;  // Default value
+  JSON::get_value(shots, "shots", config);
+
   // Check if parameterized qobj
   // It should be of the form
   // [exp0_params, exp1_params, ...]
@@ -107,7 +112,15 @@ Qobj::Qobj(const json_t &js) {
   // Load circuits
   for (size_t i=0; i<num_circs; i++) {
     // Get base circuit from qobj
-    Circuit circuit(circs[i], config);
+    Circuit circuit = circs[i];
+
+    // Get shots from qobj config
+    // This will be overriden if specified in circuit config
+    circuit.shots = shots;
+
+    // Set random circuit seed
+    circuit.seed = std::random_device()();
+
     if (param_table.empty() || param_table[i].empty()) {
       // Non parameterized circuit
       circuits.push_back(circuit);
@@ -136,6 +149,7 @@ Qobj::Qobj(const json_t &js) {
           // Update the param
           op.params[param_pos] = params.second[j];
         }
+        param_circuit.seed = std::random_device()();
         circuits.push_back(param_circuit);
       }
     }

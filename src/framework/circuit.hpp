@@ -15,8 +15,6 @@
 #ifndef _aer_framework_circuit_hpp_
 #define _aer_framework_circuit_hpp_
 
-#include <random>
-
 #include "framework/operations.hpp"
 #include "framework/opset.hpp"
 #include "framework/json.hpp"
@@ -31,11 +29,8 @@ namespace AER {
 // qubits, memory bits, and register bits for the input operators.
 class Circuit {
 public:
-  using Op = Operations::Op;
-  using OpType = Operations::OpType;
-
   // Circuit operations
-  std::vector<Op> ops;
+  std::vector<Operations::Op> ops;
 
   // Circuit parameters updated by from ops by set_params
   uint_t num_qubits = 0;        // maximum number of qubits needed for ops
@@ -48,57 +43,64 @@ public:
   size_t first_measure_pos = 0; // Position of first measure instruction
 
   // Circuit metadata constructed from json QobjExperiment
-  uint_t shots = 1;
-  uint_t seed;
-  json_t header;
-  
+  std::string name = "";        // Circuit name string
+  uint_t shots = 1;             // TODO: remove from circuit class
+  uint_t seed;                  // TODO: remove from circuit class
+  json_t header;                // TODO: remove from circuit class
 
-  // Constructor
-  // The constructor automatically calculates the num_qubits, num_memory, num_registers
+  // Constructors
+  // The operations constructors automatically calculate the
+  // num_qubits, num_memory, num_registers
   // parameters by scanning the input list of ops.
-  Circuit() {set_random_seed();}
-  Circuit(const std::vector<Op> &_ops);
-
-  // Construct a circuit from JSON
-  Circuit(const json_t &circ);
-  Circuit(const json_t &circ, const json_t &qobj_config);
+  Circuit() = default;
+  Circuit(const std::vector<Operations::Op> &_ops); // copy ops vector
+  Circuit(std::vector<Operations::Op> &&_ops); // move ops vector
 
   //-----------------------------------------------------------------------
   // Set containers
   //-----------------------------------------------------------------------
 
   // Return the opset for the circuit
-  inline const Operations::OpSet& opset() const {return opset_;}
+  const Operations::OpSet& opset() const {return opset_;}
 
   // Return the used qubits for the circuit
-  inline const std::set<uint_t>& qubits() const {return qubitset_;}
+  const std::set<uint_t>& qubits() const {return qubitset_;}
 
   // Return the used qubits for the circuit
-  inline const std::set<uint_t>& memory() const {return memoryset_;}
+  const std::set<uint_t>& memory() const {return memoryset_;}
 
   // Return the used qubits for the circuit
-  inline const std::set<uint_t>& registers() const {return registerset_;}
+  const std::set<uint_t>& registers() const {return registerset_;}
 
   //-----------------------------------------------------------------------
   // Utility methods 
   //-----------------------------------------------------------------------
-  
+
+  // Append another circuits ops to current circuit
+  Circuit& operator+=(const Circuit& rhs); // Copy append
+  Circuit& operator+=(Circuit&& rhs);      // Move append
+  Circuit operator+(const Circuit& rhs) const;
+
+  // Append ops vector to circuit
+  Circuit& operator+=(const std::vector<Operations::Op> &_ops); // Copy append
+  Circuit& operator+=(std::vector<Operations::Op> &&_ops);      // Move append
+  Circuit operator+(const std::vector<Operations::Op> &_ops) const;
+
   // Automatically set the number of qubits, memory, registers, and check
   // for conditionals based on ops
   void set_params();
-
-  // Set the circuit rng seed to random value
-  inline void set_random_seed() {seed = std::random_device()();}
 
 private:
   Operations::OpSet opset_;      // Set of operation types contained in circuit
   std::set<uint_t> qubitset_;    // Set of qubits used in the circuit
   std::set<uint_t> memoryset_;   // Set of memory bits used in the circuit
   std::set<uint_t> registerset_; // Set of register bits used in the circuit
-};
 
-// Json conversion function
-inline void from_json(const json_t &js, Circuit &circ) {circ = Circuit(js);}
+  // Helper function for combining metadata from source into target
+  // Note that this will invalidate the circuit unless the other circuits
+  // ops are also appended to the current circuit
+  void append_circuit_metadata(const Circuit& source);
+};
 
 
 //============================================================================
@@ -130,14 +132,15 @@ void Circuit::set_params() {
     // Compute measure sampling check
     if (can_sample) {
       if (first_measure) {
-        if (op.type == OpType::measure || op.type == OpType::roerror) {
+        if (op.type == Operations::OpType::measure ||
+            op.type == Operations::OpType::roerror) {
           first_measure = false;
         } else {
           first_measure_pos++;
         }
-      } else if((op.type == OpType::barrier ||
-                 op.type == OpType::measure ||
-                 op.type == OpType::roerror) == false) {
+      } else if((op.type == Operations::OpType::barrier ||
+                 op.type == Operations::OpType::measure ||
+                 op.type == Operations::OpType::roerror) == false) {
         can_sample = false;
       }
     }
@@ -151,57 +154,131 @@ void Circuit::set_params() {
   num_registers = (registerset_.empty()) ? 0 : 1 + *registerset_.rbegin();
 }
 
-Circuit::Circuit(const std::vector<Op> &_ops) : Circuit() {
+Circuit::Circuit(const std::vector<Operations::Op> &_ops) {
   ops = _ops;
   set_params();
 }
 
-Circuit::Circuit(const json_t &circ) : Circuit(circ, json_t()) {}
+Circuit::Circuit(std::vector<Operations::Op> &&_ops) {
+  ops = std::move(_ops);
+  set_params();
+}
 
-Circuit::Circuit(const json_t &circ, const json_t &qobj_config) : Circuit() {
+void Circuit::append_circuit_metadata(const Circuit& other) {
+  // Get max required parameters
+  num_qubits = std::max(num_qubits, other.num_qubits);
+  num_memory = std::max(num_memory, other.num_qubits);
+  num_registers = std::max(num_registers, other.num_qubits);
+  has_conditional = has_conditional || other.has_conditional;
 
-  // Get config
-  json_t config = qobj_config;
-  if (JSON::check_key("config", circ)) {
-    for (auto it = circ["config"].cbegin(); it != circ["config"].cend();
-         ++it) {
-      config[it.key()] = it.value(); // overwrite circuit level config values
-    }
+  // Sets of operations
+  opset_.insert(other.opset_);
+  qubitset_.insert(other.qubitset_.begin(), other.qubitset_.end());
+  memoryset_.insert(other.qubitset_.begin(), other.qubitset_.end());
+  registerset_.insert(other.qubitset_.begin(), other.qubitset_.end());
+
+  // Check measure sampling condition
+  if (first_measure_pos == ops.size()) {
+    // No measurement in first circuit so we may use the added
+    // circuits value
+    first_measure_pos = ops.size() + other.first_measure_pos;
+    can_sample = other.can_sample;
+  } else if (other.first_measure_pos == 0) {
+    // If first circuit has measurement we can't sample unless
+    // the other circuit has measurement as its first operation
+    can_sample &= other.can_sample;
+  } else {
+    can_sample = false;
   }
+}                     
+
+Circuit& Circuit::operator+=(Circuit&& rhs) {
+  std::move(rhs.ops.begin(), rhs.ops.end(), std::back_inserter(ops));
+  append_circuit_metadata(rhs);
+  return *this;
+}
+
+Circuit& Circuit::operator+=(const Circuit& rhs) {
+  std::copy(rhs.ops.begin(), rhs.ops.end(), std::back_inserter(ops));
+  append_circuit_metadata(rhs);
+  return *this;
+}
+
+Circuit Circuit::operator+(const Circuit& rhs) const {
+  Circuit ret = *this;
+  ret += rhs;
+  return ret;
+}
+
+Circuit& Circuit::operator+=(const std::vector<Operations::Op> &_ops) {
+  *this += Circuit(ops);
+  return *this;
+}
+
+Circuit& Circuit::operator+=(std::vector<Operations::Op> &&_ops) {
+  *this += Circuit(std::move(ops));
+  return *this;
+}
+
+Circuit Circuit::operator+(const std::vector<Operations::Op> &_ops) const {
+  Circuit ret = *this;
+  ret += Circuit(_ops);
+  return ret;
+}
+
+//============================================================================
+// JSON Converison
+//============================================================================
+
+void from_json(const json_t &js, Circuit &circ) {
+
   // Load instructions
-  if (JSON::check_key("instructions", circ) == false) {
+  if (JSON::check_key("instructions", js) == false) {
     throw std::invalid_argument("Invalid Qobj experiment: no \"instructions\" field.");
   }
-  ops.clear(); // remove any current operations
-  const json_t &jops = circ["instructions"];
+
+  std::vector<Operations::Op> ops;
+  const json_t &jops = js["instructions"];
   for(auto jop: jops){
     ops.emplace_back(Operations::json_to_op(jop));
   }
 
-  // Set circuit parameters from ops
-  set_params();
+  // Construct circuit
+  circ = Circuit(std::move(ops));
 
-  // Load metadata
-  JSON::get_value(header, "header", circ);
-  JSON::get_value(shots, "shots", config);
-
-  // Check for specified memory slots
-  uint_t memory_slots = 0;
-  JSON::get_value(memory_slots, "memory_slots", config);
-  if (memory_slots < num_memory) {
-    throw std::invalid_argument("Invalid Qobj experiment: not enough memory slots.");
+  // Add additional metadata from circ config
+  if (JSON::check_key("header", js)) {
+    JSON::get_value(circ.name, "name", js["header"]);
+    
+    // Copy header
+    // TODO: this should be moved to qobj instead
+    circ.header = js["header"];
   }
-  // override memory slot number
-  num_memory = memory_slots;
+  if (JSON::check_key("config", js)) {
+    const json_t& config = js["config"];
 
-  // Check for specified n_qubits
-  if (JSON::check_key("n_qubits", config)) {
-    uint_t n_qubits = config["n_qubits"];
-    if (n_qubits < num_qubits) {
-      throw std::invalid_argument("Invalid Qobj experiment: n_qubits < instruction qubits.");
+    // Get shots and seeds
+    JSON::get_value(circ.shots, "shots", config);
+
+    // Check for specified memory slots
+    if (JSON::check_key("memory_slots",  config)) {
+      uint_t memory_slots = config["memory_slots"];
+      if (memory_slots < circ.num_memory) {
+        throw std::invalid_argument("Invalid Qobj experiment: not enough memory slots.");
+      }
+      // override memory slot number
+      circ.num_memory = memory_slots;
     }
-    // override qubit number
-    num_qubits = n_qubits;
+
+    // Check for specified n_qubits
+    if (JSON::check_key("n_qubits", config)) {
+      uint_t n_qubits = config["n_qubits"];
+      if (n_qubits < circ.num_qubits) {
+        throw std::invalid_argument("Invalid Qobj experiment: n_qubits < instruction qubits.");
+      }
+      // override qubit number
+      circ.num_qubits = n_qubits;
+    }
   }
 }
 
