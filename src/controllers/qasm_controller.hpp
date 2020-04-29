@@ -159,9 +159,10 @@ class QasmController : public Base::Controller {
   // This method must initialize a state and return output data for
   // the required number of shots.
   virtual ExperimentData run_circuit(const Circuit &circ,
+                                     uint_t shots,
+                                     uint_t rng_seed,
                                      const Noise::NoiseModel &noise,
-                                     const json_t &config, uint_t shots,
-                                     uint_t rng_seed) const override;
+                                     const json_t &config) const override;
 
   //----------------------------------------------------------------
   // Utility functions
@@ -181,7 +182,7 @@ class QasmController : public Base::Controller {
 
   // Set parallelization for qasm simulator
   virtual void set_parallelization_circuit(
-      const Circuit &circ, const Noise::NoiseModel &noise) override;
+      const Circuit &circ, const Noise::NoiseModel &noise, uint_t shots) override;
 
   // Return a fusion transpilation pass configured for the current
   // method, circuit and config
@@ -361,9 +362,10 @@ void QasmController::clear_config() {
 //-------------------------------------------------------------------------
 
 ExperimentData QasmController::run_circuit(const Circuit &circ,
+                                           uint_t shots,
+                                           uint_t rng_seed,
                                            const Noise::NoiseModel &noise,
-                                           const json_t &config, uint_t shots,
-                                           uint_t rng_seed) const {
+                                           const json_t &config) const {
   // Validate circuit for simulation method
   switch (simulation_method(circ, noise, true)) {
     case Method::statevector:
@@ -745,7 +747,7 @@ Transpile::Fusion QasmController::transpile_fusion(Method method,
 }
 
 void QasmController::set_parallelization_circuit(
-    const Circuit &circ, const Noise::NoiseModel &noise_model) {
+    const Circuit &circ, const Noise::NoiseModel &noise_model, uint_t shots) {
   const auto method = simulation_method(circ, noise_model, false);
   switch (method) {
     case Method::statevector:
@@ -761,7 +763,7 @@ void QasmController::set_parallelization_circuit(
             std::max<int>({1, max_parallel_threads_ / parallel_experiments_});
         return;
       }
-      Base::Controller::set_parallelization_circuit(circ, noise_model);
+      Base::Controller::set_parallelization_circuit(circ, noise_model, shots);
       break;
     }
     case Method::density_matrix:
@@ -773,11 +775,11 @@ void QasmController::set_parallelization_circuit(
             std::max<int>({1, max_parallel_threads_ / parallel_experiments_});
         return;
       }
-      Base::Controller::set_parallelization_circuit(circ, noise_model);
+      Base::Controller::set_parallelization_circuit(circ, noise_model, shots);
       break;
     }
     default: {
-      Base::Controller::set_parallelization_circuit(circ, noise_model);
+      Base::Controller::set_parallelization_circuit(circ, noise_model, shots);
     }
   }
 }
@@ -883,7 +885,6 @@ void QasmController::run_circuit_without_noise(const Circuit &circ,
 
   // Dummy noise model for transpiler passes
   Noise::NoiseModel dummy_noise;
-
   // Apply fusion transpilation pass
   auto fusion_pass = transpile_fusion(method, config);
   fusion_pass.optimize_circuit(opt_circ, dummy_noise, state.opset(), data);

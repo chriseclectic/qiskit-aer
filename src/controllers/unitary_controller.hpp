@@ -90,9 +90,10 @@ class UnitaryController : public Base::Controller {
   // This simulator will only return a single shot, regardless of the
   // input shot number
   virtual ExperimentData run_circuit(const Circuit &circ,
+                                     uint_t shots,
+                                     uint_t rng_seed,
                                      const Noise::NoiseModel &noise,
-                                     const json_t &config, uint_t shots,
-                                     uint_t rng_seed) const override;
+                                     const json_t &config) const override;
 
   template <class State_t>
   ExperimentData run_circuit_helper(const Circuit &circ,
@@ -188,10 +189,10 @@ size_t UnitaryController::required_memory_mb(
 //-------------------------------------------------------------------------
 
 ExperimentData UnitaryController::run_circuit(const Circuit &circ,
-                                              const Noise::NoiseModel &noise,
-                                              const json_t &config,
                                               uint_t shots,
-                                              uint_t rng_seed) const {
+                                              uint_t rng_seed,
+                                              const Noise::NoiseModel &noise,
+                                              const json_t &config) const {
   switch (method_) {
     case Method::automatic:
     case Method::unitary_cpu: {

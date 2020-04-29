@@ -98,9 +98,10 @@ class StatevectorController : public Base::Controller {
   // This simulator will only return a single shot, regardless of the
   // input shot number
   virtual ExperimentData run_circuit(const Circuit& circ,
+                                     uint_t shots,
+                                     uint_t rng_seed,
                                      const Noise::NoiseModel& noise,
-                                     const json_t& config, uint_t shots,
-                                     uint_t rng_seed) const override;
+                                     const json_t& config) const override;
 
   // Execute n-shots of a circuit on the input state
   template <class State_t>
@@ -195,9 +196,11 @@ size_t StatevectorController::required_memory_mb(
 // Run circuit
 //-------------------------------------------------------------------------
 
-ExperimentData StatevectorController::run_circuit(
-    const Circuit& circ, const Noise::NoiseModel& noise, const json_t& config,
-    uint_t shots, uint_t rng_seed) const {
+ExperimentData StatevectorController::run_circuit(const Circuit& circ,
+                                                  uint_t shots,
+                                                  uint_t rng_seed,
+                                                  const Noise::NoiseModel& noise,
+                                                  const json_t& config) const {
   switch (method_) {
     case Method::automatic:
     case Method::statevector_cpu: {
