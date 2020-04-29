@@ -16,7 +16,9 @@
 #define _aer_noise_model_hpp_
 
 #define _USE_MATH_DEFINES
+#include <algorithm>
 #include <math.h>
+
 
 #include "framework/operations.hpp"
 #include "framework/types.hpp"
@@ -284,9 +286,11 @@ Circuit NoiseModel::sample_noise(const Circuit &circ,
                                  RngEngine &rng) const {
     bool noise_active = true; // set noise active to on-state
     Circuit noisy_circ;
+
     // Copy metadata
-    noisy_circ.seed = circ.seed;
+    noisy_circ.name = circ.name;
     noisy_circ.shots = circ.shots;
+    noisy_circ.seed = circ.seed;
     noisy_circ.header = circ.header;
 
     // Reserve double length of ops just to be safe
@@ -320,8 +324,10 @@ Circuit NoiseModel::sample_noise(const Circuit &circ,
           break;
         default:
           if (noise_active) {
+            // We manually move ops into circuit here so we can call
+            // set_params once at the end of sampling to update the circuit
             NoiseOps noisy_op = sample_noise(op, rng);
-            noisy_circ.ops.insert(noisy_circ.ops.end(), noisy_op.begin(), noisy_op.end());
+            std::move(noisy_op.begin(), noisy_op.end(), std::back_inserter(noisy_circ.ops));
           }
           break;
       }
