@@ -29,27 +29,19 @@ namespace AER {
 // Qobj data structure
 //============================================================================
 
-class Qobj {
- public:
-  //----------------------------------------------------------------
-  // Constructors
-  //----------------------------------------------------------------
-
-  // Default constructor and destructors
-  Qobj() = default;
-  virtual ~Qobj() = default;
-
-  // JSON deserialization constructor
-  Qobj(const json_t &js);
-
+struct Qobj {
   //----------------------------------------------------------------
   // Data
   //----------------------------------------------------------------
-  std::string id;                 // qobj identifier passed to result
+  std::string id;                 // Qobj identifier passed to result
   std::string type = "QASM";      // currently we only support QASM
   std::vector<Circuit> circuits;  // List of circuits
-  json_t header;                  // (optional) passed through to result
-  json_t config;                  // (optional) qobj level config data
+  std::vector<uint_t> shots;      // List of circuit shots;
+
+  // Metadata
+  json_t config;                          // (optional) qobj level config data
+  json_t header;                          // (optional) passed through to result
+  std::vector<json_t> circuit_headers;    // (optional) circuit header data
 };
 
 //============================================================================
@@ -57,15 +49,17 @@ class Qobj {
 //============================================================================
 
 // JSON deserialization
-inline void from_json(const json_t &js, Qobj &qobj) { qobj = Qobj(js); }
+inline void from_json(const json_t &js, Qobj &qobj) {
 
-Qobj::Qobj(const json_t &js) {
+  // Initialize empty Qobj
+  qobj = Qobj();
+
   // Check required fields
-  if (JSON::get_value(id, "qobj_id", js) == false) {
+  if (JSON::get_value(qobj.id, "qobj_id", js) == false) {
     throw std::invalid_argument(R"(Invalid qobj: no "qobj_id" field)");
   };
-  JSON::get_value(type, "type", js);
-  if (type != "QASM") {
+  JSON::get_value(qobj.type, "type", js);
+  if (qobj.type != "QASM") {
     throw std::invalid_argument(R"(Invalid qobj: "type" != "QASM".)");
   };
   if (JSON::check_key("experiments", js) == false) {
@@ -73,16 +67,13 @@ Qobj::Qobj(const json_t &js) {
   }
 
   // Get header and config;
-  JSON::get_value(config, "config", js);
-  JSON::get_value(header, "header", js);
+  JSON::get_value(qobj.config, "config", js);
+  JSON::get_value(qobj.header, "header", js);
 
-  // Check for fixed simulator seed
-  // If seed is negative a random seed will be chosen for each
-  // experiment. Otherwise each experiment will be set to a fixed
-  // (but different) seed.
-  int_t seed = -1;
-  uint_t seed_shift = 0;
-  JSON::get_value(seed, "seed_simulator", config);
+  // Check shot number
+  uint_t config_shots = 1;
+  JSON::get_value(config_shots, "shots", qobj.config);
+
   const json_t &circs = js["experiments"];
   const size_t num_circs = circs.size();
 
@@ -101,7 +92,7 @@ Qobj::Qobj(const json_t &js) {
   using pos_t = std::pair<uint_t, uint_t>;
   using exp_params_t = std::vector<std::pair<pos_t, std::vector<double>>>;
   std::vector<exp_params_t> param_table;
-  JSON::get_value(param_table, "parameterizations", config);
+  JSON::get_value(param_table, "parameterizations", qobj.config);
 
   // Validate parameterizations for number of circuis
   if (!param_table.empty() && param_table.size() != num_circs) {
@@ -113,17 +104,22 @@ Qobj::Qobj(const json_t &js) {
   for (size_t i=0; i<num_circs; i++) {
     // Get base circuit from qobj
     Circuit circuit = circs[i];
+    
+    // Check for shots
+    uint_t circ_shots = config_shots;
+    if (JSON::check_key("config", circs[i])) {
+       JSON::get_value(circ_shots, "shots", circs[i]["config"]);
+    }
 
-    // Get shots from qobj config
-    // This will be overriden if specified in circuit config
-    circuit.shots = shots;
-
-    // Set random circuit seed
-    circuit.seed = std::random_device()();
+    // Check for circuit name
+    json_t header = json_t::object();
+    JSON::get_value(header, "header", circs[i]);
 
     if (param_table.empty() || param_table[i].empty()) {
       // Non parameterized circuit
-      circuits.push_back(circuit);
+      qobj.circuits.emplace_back(std::move(circuit));
+      qobj.circuit_headers.emplace_back(std::move(header));
+      qobj.shots.emplace_back(circ_shots);
     } else {
       // Load different parameterizations of the initial circuit
       const auto circ_params = param_table[i];
@@ -149,18 +145,10 @@ Qobj::Qobj(const json_t &js) {
           // Update the param
           op.params[param_pos] = params.second[j];
         }
-        param_circuit.seed = std::random_device()();
-        circuits.push_back(param_circuit);
+        qobj.circuits.push_back(param_circuit);
+        qobj.shots.push_back(circ_shots);
+        qobj.circuit_headers.push_back(header);
       }
-    }
-  }
-  // Override random seed with fixed seed if set
-  // We shift the seed for each successive experiment
-  // So that results aren't correlated between experiments
-  if (seed >= 0) {
-    for (auto& circuit : circuits) {
-      circuit.seed = seed + seed_shift;
-      seed_shift += 2113;  // Shift the seed
     }
   }
 }
