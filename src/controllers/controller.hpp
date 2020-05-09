@@ -110,10 +110,13 @@ public:
   // Execute qobj
   //-----------------------------------------------------------------------
 
-  // Load a QOBJ from a JSON file and execute on the State type
-  // class.
-  virtual Result execute(const json_t &qobj);
+  // Load a Qobj struct from a JSON file and execute
+  virtual Result execute(const json_t &qobj_js);
 
+  // Execute a Qobj struct
+  virtual Result execute(Qobj &qobj);
+
+  // Execute a list of circuit
   virtual Result execute(std::vector<Circuit> &circuits,
                          const Noise::NoiseModel &noise_model,
                          const json_t &config);
@@ -456,37 +459,61 @@ bool Controller::validate_memory_requirements(const state_t &state,
 // Qobj execution
 //-------------------------------------------------------------------------
 Result Controller::execute(const json_t &qobj_js) {
+  // Load Qobj from JSON
+  Qobj qobj;
+  double time_taken = 0;
+  try {
+    auto timer_start = myclock_t::now();
+    qobj = qobj_js;
+    auto timer_stop = myclock_t::now();
+    time_taken = std::chrono::duration<double>(timer_stop - timer_start).count();
+  } 
+  catch (std::exception &e) {
+    // qobj was invalid, return valid output containing error message
+    Result result;
+    result.status = Result::Status::error;
+    result.message = std::string("Failed to load Qobj: ") + e.what();
+    return result;
+  }
+
+  // Execute Qobj
+  auto result = execute(qobj);
+
+  // Add qobj_load_time to execution time
+  time_taken += double(result.metadata["time_taken"]);
+  result.metadata["time_taken"] = time_taken;
+  return result;
+}
+
+Result Controller::execute(Qobj &qobj) {
   // Load QOBJ in a try block so we can catch parsing errors and still return
   // a valid JSON output containing the error message.
   try {
     // Start QOBJ timer
     auto timer_start = myclock_t::now();
 
-    Qobj qobj = qobj_js;
-    Noise::NoiseModel noise_model;
-    json_t config;
-    // Check for config
-    if (JSON::get_value(config, "config", qobj_js)) {
-      // Set config
-      set_config(config);
-      // Load noise model
-      JSON::get_value(noise_model, "noise_model", config);
-    }
-    auto result = execute(qobj.circuits, noise_model, config);
+    // Set config
+    set_config(qobj.config);
+
+    // Execute circuits
+    auto result = execute(qobj.circuits, qobj.noise_model, qobj.config);
+
     // Get QOBJ id and pass through header to result
     result.qobj_id = qobj.id;
     if (!qobj.header.empty()) {
         result.header = qobj.header;
     }
+
     // Stop the timer and add total timing data including qobj parsing
     auto timer_stop = myclock_t::now();
     result.metadata["time_taken"] = std::chrono::duration<double>(timer_stop - timer_start).count();
     return result;
   } catch (std::exception &e) {
-    // qobj was invalid, return valid output containing error message
+    // An exception was raised during execution so we return
+    // a valid output containing error message
     Result result;
     result.status = Result::Status::error;
-    result.message = std::string("Failed to load qobj: ") + e.what();
+    result.message = std::string("Failed to run Qobj: ") + e.what();
     return result;
   }
 }
@@ -642,7 +669,7 @@ ExperimentResult Controller::execute_circuit(Circuit &circ,
     exp_result.data = data;
     exp_result.status = ExperimentResult::Status::completed;
 
-    // Pass through circuit header and add metadata
+    // Pass through circuit metadata
     exp_result.header = circ.header;
     exp_result.shots = circ.shots;
     exp_result.seed = circ.seed;
