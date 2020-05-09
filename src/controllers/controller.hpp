@@ -462,7 +462,7 @@ Result Controller::execute(const json_t &qobj_js) {
     // Start QOBJ timer
     auto timer_start = myclock_t::now();
 
-    Qobj qobj(qobj_js);
+    Qobj qobj = qobj_js;
     Noise::NoiseModel noise_model;
     json_t config;
     // Check for config
