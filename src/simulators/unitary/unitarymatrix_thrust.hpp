@@ -68,7 +68,7 @@ public:
   virtual uint_t num_qubits() const override { return num_qubits_;}
 
   // Returns a copy of the underlying data_t data as a complex vector
-  AER::cmatrix_t copy_to_matrix() const;
+  matrix<std::complex<data_t>> copy_to_matrix() const;
 
   // Return the trace of the unitary
   std::complex<double> trace() const;
@@ -203,10 +203,10 @@ UnitaryMatrixThrust<data_t>::UnitaryMatrixThrust(size_t num_qubits) {
 //------------------------------------------------------------------------------
 
 template <class data_t>
-AER::cmatrix_t UnitaryMatrixThrust<data_t>::copy_to_matrix() const 
+matrix<std::complex<data_t>> UnitaryMatrixThrust<data_t>::copy_to_matrix() const 
 {
   const int_t nrows = rows_;
-  AER::cmatrix_t ret(nrows, nrows);
+  matrix<std::complex<data_t>> ret(nrows, nrows);
   cvector_t<data_t> qreg = BaseVector::vector();
 
   int iPlace;

@@ -61,7 +61,7 @@ public:
   virtual uint_t num_qubits() const override { return num_qubits_;}
 
   // Returns a copy of the underlying data_t data as a complex vector
-  AER::cmatrix_t copy_to_matrix() const;
+  matrix<std::complex<data_t>> copy_to_matrix() const;
 
   // Return the trace of the unitary
   std::complex<double> trace() const;
@@ -184,10 +184,10 @@ UnitaryMatrix<data_t>::UnitaryMatrix(size_t num_qubits) {
 //------------------------------------------------------------------------------
 
 template <class data_t>
-AER::cmatrix_t UnitaryMatrix<data_t>::copy_to_matrix() const {
+matrix<std::complex<data_t>> UnitaryMatrix<data_t>::copy_to_matrix() const {
 
   const int_t nrows = rows_;
-  AER::cmatrix_t ret(nrows, nrows);
+  matrix<std::complex<data_t>> ret(nrows, nrows);
 
   #pragma omp parallel if (BaseVector::num_qubits_ > BaseVector::omp_threshold_ && BaseVector::omp_threads_ > 1) num_threads(BaseVector::omp_threads_)
   {
