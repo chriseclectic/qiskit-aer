@@ -70,6 +70,11 @@ public:
   // Returns a copy of the underlying data_t data as a complex vector
   matrix<std::complex<data_t>> copy_to_matrix() const;
 
+  // Returns a matrix which contains the buffer from the unitary matrix
+  // Note this is not actually a move since we are copying memory from
+  // device to host anyway
+  matrix<std::complex<data_t>> move_to_matrix() { return copy_to_matrix(); }
+
   // Return the trace of the unitary
   std::complex<double> trace() const;
 

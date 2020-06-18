@@ -63,6 +63,9 @@ public:
   // Returns a copy of the underlying data_t data as a complex vector
   matrix<std::complex<data_t>> copy_to_matrix() const;
 
+  // Returns a matrix which contains the buffer from the unitary matrix
+  matrix<std::complex<data_t>> move_to_matrix();
+
   // Return the trace of the unitary
   std::complex<double> trace() const;
 
@@ -185,22 +188,14 @@ UnitaryMatrix<data_t>::UnitaryMatrix(size_t num_qubits) {
 
 template <class data_t>
 matrix<std::complex<data_t>> UnitaryMatrix<data_t>::copy_to_matrix() const {
+  return matrix<std::complex<data_t>>(rows_, rows_, BaseVector::data_);
+}
 
-  const int_t nrows = rows_;
-  matrix<std::complex<data_t>> ret(nrows, nrows);
-
-  #pragma omp parallel if (BaseVector::num_qubits_ > BaseVector::omp_threshold_ && BaseVector::omp_threads_ > 1) num_threads(BaseVector::omp_threads_)
-  {
-  #ifdef _WIN32
-    #pragma omp for
-  #else
-    #pragma omp for collapse(2)
-  #endif
-    for (int_t i=0; i < nrows; i++)
-      for (int_t j=0; j < nrows; j++) {
-        ret(i, j) = BaseVector::data_[i + nrows * j];
-      }
-  } // end omp parallel
+template <class data_t>
+matrix<std::complex<data_t>> UnitaryMatrix<data_t>::move_to_matrix() {
+  auto ret = matrix<std::complex<data_t>>::from_buffer(rows_, rows_, BaseVector::data_);
+  BaseVector::data_ = nullptr;
+  set_num_qubits(0);
   return ret;
 }
 
