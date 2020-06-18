@@ -378,7 +378,7 @@ matrix<T> matrix<T>::from_buffer(size_t rows, size_t cols, T* buffer) {
   ret.cols_ = cols;
   ret.LD_ = rows;
   ret.mat_ = buffer;
-  return ret.ret;
+  return ret;
 }
 
 template <class T>
