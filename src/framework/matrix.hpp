@@ -212,6 +212,11 @@ public:
   explicit matrix(size_t size); // Makes a square matrix and rows = sqrt(size) columns =
                                 // sqrt(dims)
   matrix(const matrix<T> &m);
+
+  // Cast and copy constructor
+  template <class S>
+  matrix(const matrix<S> &m);
+
   matrix(const matrix<T> &m, const char uplo);
   matrix(matrix<T>&& m); // move constructor
 
@@ -331,6 +336,15 @@ matrix<T>::matrix(const matrix<T> &rhs)
 
 
 template <class T>
+template <class S>
+matrix<T>::matrix(const matrix<S> &rhs)
+    : rows_(rhs.rows_), cols_(rhs.cols_), size_(rhs.size_), LD_(rows_),
+      outputstyle_(rhs.outputstyle_), mat_(memory_allocator<T>(size_)) {
+  std::transform(rhs.mat_, rhs.mat_ + size_, mat_, [](const T& val) -> S { return val; });
+}
+
+
+template <class T>
 matrix<T>::matrix(matrix<T>&& rhs)
     : rows_(rhs.rows_), cols_(rhs.cols_), size_(rhs.size_), LD_(rows_),
       outputstyle_(rhs.outputstyle_), mat_(rhs.mat_) {
@@ -344,7 +358,6 @@ matrix<T>::matrix(size_t rows, size_t cols, const T* buffer)
   std::copy(buffer, buffer + size_, mat_);
 }
 
-
 template <class T>
 matrix<T> matrix<T>::from_buffer(size_t rows, size_t cols, T* buffer) {
   matrix<T> ret;
@@ -355,7 +368,6 @@ matrix<T> matrix<T>::from_buffer(size_t rows, size_t cols, T* buffer) {
   ret.mat_ = buffer;
   return ret.ret;
 }
-
 
 template <class T>
 matrix<T>::matrix(size_t dim2)
