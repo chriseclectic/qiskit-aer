@@ -69,10 +69,15 @@ public:
   // Data accessors
   //-----------------------------------------------------------------------
 
-  // Returns a const reference to the states data structure
-  const auto &qreg() const {return qreg_;}
-  const auto &creg() const {return creg_;}
-  const auto &opset() const {return opset_;}
+  // Return a reference to the states data structure
+  const auto& qreg() const { return qreg_; }
+  auto& qreg() { return qreg_; }
+
+  const auto& creg() const { return creg_; }
+  auto& creg() { return creg_; }
+
+  const auto& opset() const { return opset_; }
+  auto& opset() { return opset_; }
 
   //=======================================================================
   // Subclass Override Methods
