@@ -327,6 +327,7 @@ void QuantumError::compute_superoperator() {
   // Initialize superoperator matrix to correct size
   size_t dim = 1 << (2 * get_num_qubits());
   superoperator_.initialize(dim, dim);
+  superoperator_.fill(0.0);
   // We use the superoperator simulator state to do this
   QubitSuperoperator::State<> superop;
   for (size_t j=0; j<circuits_.size(); j++ ){
