@@ -61,7 +61,7 @@ public:
   virtual uint_t num_qubits() const override { return num_qubits_;}
 
   // Returns a copy of the underlying data_t data as a complex vector
-  AER::cmatrix_t matrix() const;
+  AER::cmatrix_t copy_to_matrix() const;
 
   // Return the trace of the unitary
   std::complex<double> trace() const;
@@ -184,7 +184,7 @@ UnitaryMatrix<data_t>::UnitaryMatrix(size_t num_qubits) {
 //------------------------------------------------------------------------------
 
 template <class data_t>
-AER::cmatrix_t UnitaryMatrix<data_t>::matrix() const {
+AER::cmatrix_t UnitaryMatrix<data_t>::copy_to_matrix() const {
 
   const int_t nrows = rows_;
   AER::cmatrix_t ret(nrows, nrows);
@@ -316,7 +316,7 @@ std::pair<bool, double> UnitaryMatrix<data_t>::check_identity() const {
 // ostream overload for templated qubitvector
 template <class data_t>
 inline std::ostream &operator<<(std::ostream &out, const QV::UnitaryMatrix<data_t>&m) {
-  out << m.matrix();
+  out << m.copy_to_matrix();
   return out;
 }
 
