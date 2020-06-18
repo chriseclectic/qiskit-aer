@@ -223,8 +223,8 @@ public:
   // The buffer should have size = rows * cols and have memory allocated
   // using malloc, otherwise the behaviour will be undefined.
   // Use with caution!
-  matrix(size_t rows, size_t cols, T* buffer);
-
+  static matrix<T> from_buffer(size_t rows, size_t cols, T* buffer);
+ 
   // Initialize an empty matrix() to matrix(size_t  rows, size_t cols)
   void initialize(size_t rows, size_t cols);
 
@@ -323,18 +323,6 @@ matrix<T>::matrix(size_t rows, size_t cols)
 
 
 template <class T>
-matrix<T>::matrix(size_t rows, size_t cols, const T* buffer)
-    : rows_(rows), cols_(cols), size_(rows * cols), LD_(rows),
-      outputstyle_(Column), mat_(memory_allocator<T>(size_)) {
-  std::copy(buffer, buffer + size_, mat_);
-}
-
-template <class T>
-matrix<T>::matrix(size_t rows, size_t cols, T* buffer)
-    : rows_(rows), cols_(cols), size_(rows * cols), LD_(rows),
-      outputstyle_(Column), mat_(buffer) {}
-
-template <class T>
 matrix<T>::matrix(const matrix<T> &rhs)
     : rows_(rhs.rows_), cols_(rhs.cols_), size_(rhs.size_), LD_(rows_),
       outputstyle_(rhs.outputstyle_), mat_(memory_allocator<T>(size_)) {
@@ -347,6 +335,25 @@ matrix<T>::matrix(matrix<T>&& rhs)
     : rows_(rhs.rows_), cols_(rhs.cols_), size_(rhs.size_), LD_(rows_),
       outputstyle_(rhs.outputstyle_), mat_(rhs.mat_) {
   rhs.mat_ = nullptr;
+}
+
+template <class T>
+matrix<T>::matrix(size_t rows, size_t cols, const T* buffer)
+    : rows_(rows), cols_(cols), size_(rows * cols), LD_(rows),
+      outputstyle_(Column), mat_(memory_allocator<T>(size_)) {
+  std::copy(buffer, buffer + size_, mat_);
+}
+
+
+template <class T>
+matrix<T> matrix<T>::from_buffer(size_t rows, size_t cols, T* buffer) {
+  matrix<T> ret;
+  ret.size_ = rows * cols;
+  ret.ret.rows_ = rows;
+  ret.cols_ = cols;
+  ret.LD_ = rows;
+  ret.mat_ = buffer;
+  return ret.ret;
 }
 
 
