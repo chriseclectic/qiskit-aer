@@ -207,15 +207,27 @@ class matrix {
 
 public:
   // Constructors of matrix class
-  matrix();
+  matrix() = default;
   matrix(size_t rows, size_t cols);
   explicit matrix(size_t size); // Makes a square matrix and rows = sqrt(size) columns =
                                 // sqrt(dims)
   matrix(const matrix<T> &m);
   matrix(const matrix<T> &m, const char uplo);
   matrix(matrix<T>&& m); // move constructor
+
+  // Copy construct from buffer
+  // The buffer should have size = rows * cols.
+  matrix(size_t rows, size_t cols, const T* buffer);
+
+  // Move construct from buffer
+  // The buffer should have size = rows * cols and have memory allocated
+  // using malloc, otherwise the behaviour will be undefined.
+  // Use with caution!
+  matrix(size_t rows, size_t cols, T* buffer);
+
   // Initialize an empty matrix() to matrix(size_t  rows, size_t cols)
   void initialize(size_t rows, size_t cols);
+
   // Clear used memory
   void clear();
 
@@ -305,15 +317,41 @@ void matrix<T>::deallocate() noexcept {
 }
 
 template <class T>
-inline matrix<T>::matrix(){}
-// constructs an empty matrix using the ....
-template <class T>
-inline matrix<T>::matrix(size_t rows, size_t cols)
+matrix<T>::matrix(size_t rows, size_t cols)
     : rows_(rows), cols_(cols), size_(rows * cols), LD_(rows),
       outputstyle_(Column), mat_(memory_allocator<T>(size_)) {}
-// constructs an empty matrix of size rows, cols and sets outputstyle to zero
+
+
 template <class T>
-inline matrix<T>::matrix(size_t dim2)
+matrix<T>::matrix(size_t rows, size_t cols, const T* buffer)
+    : rows_(rows), cols_(cols), size_(rows * cols), LD_(rows),
+      outputstyle_(Column), mat_(memory_allocator<T>(size_)) {
+  std::copy(buffer, buffer + size_, mat_);
+}
+
+template <class T>
+matrix<T>::matrix(size_t rows, size_t cols, T* buffer)
+    : rows_(rows), cols_(cols), size_(rows * cols), LD_(rows),
+      outputstyle_(Column), mat_(buffer) {}
+
+template <class T>
+matrix<T>::matrix(const matrix<T> &rhs)
+    : rows_(rhs.rows_), cols_(rhs.cols_), size_(rhs.size_), LD_(rows_),
+      outputstyle_(rhs.outputstyle_), mat_(memory_allocator<T>(size_)) {
+  std::copy(rhs.mat_, rhs.mat_ + rhs.size_, mat_);
+}
+
+
+template <class T>
+matrix<T>::matrix(matrix<T>&& rhs)
+    : rows_(rhs.rows_), cols_(rhs.cols_), size_(rhs.size_), LD_(rows_),
+      outputstyle_(rhs.outputstyle_), mat_(rhs.mat_) {
+  rhs.mat_ = nullptr;
+}
+
+
+template <class T>
+matrix<T>::matrix(size_t dim2)
     : size_(dim2), outputstyle_(Column), mat_(memory_allocator<T>(size_)) {
   // constructs a square matrix of dims sqrt(size)*sqrt(size)
   // PLEASE DO NOT CHANGE THIS AS IT IS USED BY ODESOLVER
@@ -342,23 +380,6 @@ inline matrix<T>::matrix(size_t dim2)
 
   cols_ = rows_;
   LD_ = rows_;
-}
-// constructs an empty matrix of size rows, cols and sets outputstyle to zero
-template <class T>
-inline matrix<T>::matrix(const matrix<T> &rhs)
-    : rows_(rhs.rows_), cols_(rhs.cols_), size_(rhs.size_), LD_(rows_),
-      outputstyle_(rhs.outputstyle_), mat_(memory_allocator<T>(size_)) {
-  // Copy constructor, copies the matrix to another matrix
-  for (size_t p = 0; p < size_; p++) {
-    mat_[p] = rhs.mat_[p];
-  }
-}
-
-template <class T>
-inline matrix<T>::matrix(matrix<T>&& rhs)
-    : rows_(rhs.rows_), cols_(rhs.cols_), size_(rhs.size_), LD_(rows_),
-      outputstyle_(rhs.outputstyle_), mat_(rhs.mat_) {
-  rhs.mat_ = nullptr; // Remove pointer from RHS
 }
 
 
