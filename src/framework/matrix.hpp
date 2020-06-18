@@ -224,6 +224,10 @@ public:
   // The buffer should have size = rows * cols.
   matrix(size_t rows, size_t cols, const T* buffer);
 
+  // Copy and cast construct from buffer
+  template <class S>
+  matrix(size_t rows, size_t cols, const S* buffer);
+
   // Move construct from buffer
   // The buffer should have size = rows * cols and have memory allocated
   // using malloc, otherwise the behaviour will be undefined.
@@ -340,7 +344,7 @@ template <class S>
 matrix<T>::matrix(const matrix<S> &rhs)
     : rows_(rhs.rows_), cols_(rhs.cols_), size_(rhs.size_), LD_(rows_),
       outputstyle_(rhs.outputstyle_), mat_(memory_allocator<T>(size_)) {
-  std::transform(rhs.mat_, rhs.mat_ + size_, mat_, [](const T& val) -> S { return val; });
+  std::transform(rhs.mat_, rhs.mat_ + size_, mat_, [](const S& val) -> T { return val; });
 }
 
 
@@ -356,6 +360,14 @@ matrix<T>::matrix(size_t rows, size_t cols, const T* buffer)
     : rows_(rows), cols_(cols), size_(rows * cols), LD_(rows),
       outputstyle_(Column), mat_(memory_allocator<T>(size_)) {
   std::copy(buffer, buffer + size_, mat_);
+}
+
+template <class T>
+template <class S>
+matrix<T>::matrix(size_t rows, size_t cols, const S* buffer)
+    : rows_(rows), cols_(cols), size_(rows * cols), LD_(rows),
+      outputstyle_(Column), mat_(memory_allocator<T>(size_)) {
+  std::transform(buffer, buffer + size_, mat_, [](const S& val) -> T { return val; });
 }
 
 template <class T>
