@@ -21,6 +21,7 @@ from qiskit.providers.models import QasmBackendConfiguration
 
 from qiskit.providers.aer.backends.aerbackend import AerBackend
 from qiskit.providers.aer.backends.backend_utils import (backend_gates,
+                                                         cpp_execute,
                                                          available_methods,
                                                          MAX_QUBITS_STATEVECTOR
                                                          )
@@ -134,12 +135,12 @@ class UnitarySimulator(AerBackend):
 
     def __init__(self, provider=None, **backend_options):
 
+        self._controller = unitary_controller_execute()
+
         if UnitarySimulator._AVAILABLE_METHODS is None:
             UnitarySimulator._AVAILABLE_METHODS = available_methods(
-                unitary_controller_execute,
+                self._controller, [
                 ['automatic', 'unitary', 'unitary_gpu', 'unitary_thrust'])
-
-        self._controller = unitary_controller_execute()
 
         super().__init__(
             QasmBackendConfiguration.from_dict(DEFAULT_CONFIGURATION),
@@ -164,7 +165,7 @@ class UnitarySimulator(AerBackend):
             else:
                 controller_input['config'][key] = val
         # Execute on controller
-        return self._controller(controller_input)
+        return cpp_execute(self._controller, controller_input)
 
     def _validate(self, qobj, options):
         """Semantic validations of the qobj which cannot be done via schemas.

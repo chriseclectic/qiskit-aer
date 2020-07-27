@@ -17,6 +17,7 @@ import logging
 from qiskit.providers.models import QasmBackendConfiguration
 from qiskit.providers.aer.backends.aerbackend import AerBackend
 from qiskit.providers.aer.backends.backend_utils import (backend_gates,
+                                                         cpp_execute,
                                                          available_methods,
                                                          MAX_QUBITS_STATEVECTOR
                                                          )
@@ -26,7 +27,6 @@ from qiskit.providers.aer.version import __version__
 from qiskit.providers.aer.backends.controller_wrappers import qasm_controller_execute
 
 logger = logging.getLogger(__name__)
-
 
 class QasmSimulator(AerBackend):
     """
@@ -237,17 +237,17 @@ class QasmSimulator(AerBackend):
 
     def __init__(self, provider=None, **backend_options):
 
+        self._controller = qasm_controller_execute()
+
         # Update available methods for class
         if QasmSimulator._AVAILABLE_METHODS is None:
             QasmSimulator._AVAILABLE_METHODS = available_methods(
-                qasm_controller_execute, [
+                self._controller, [
                     'automatic', 'statevector', 'statevector_gpu',
                     'statevector_thrust', 'density_matrix',
                     'density_matrix_gpu', 'density_matrix_thrust',
                     'stabilizer', 'matrix_product_state', 'extended_stabilizer'
                 ])
-
-        self._controller = qasm_controller_execute()
 
         super().__init__(self._method_configuration(),
                          available_methods=QasmSimulator._AVAILABLE_METHODS,
@@ -293,7 +293,7 @@ class QasmSimulator(AerBackend):
             else:
                 controller_input['config'][key] = val
         # Execute on controller
-        return self._controller(controller_input)
+        return cpp_execute(self._controller, controller_input)
 
     def _set_option(self, key, value):
         """Set the simulation method and update configuration.

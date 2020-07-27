@@ -18,6 +18,7 @@ from qiskit.util import local_hardware_info
 from qiskit.providers.models import QasmBackendConfiguration
 from qiskit.providers.aer.backends.aerbackend import AerBackend
 from qiskit.providers.aer.backends.backend_utils import (backend_gates,
+                                                         cpp_execute,
                                                          available_methods,
                                                          MAX_QUBITS_STATEVECTOR
                                                          )
@@ -103,14 +104,14 @@ class StatevectorSimulator(AerBackend):
 
     def __init__(self, provider=None, **backend_options):
 
+        self._controller = statevector_controller_execute()
+
         if StatevectorSimulator._AVAILABLE_METHODS is None:
             StatevectorSimulator._AVAILABLE_METHODS = available_methods(
-                statevector_controller_execute, [
+                self._controller, [
                     'automatic', 'statevector', 'statevector_gpu',
                     'statevector_thrust'
                 ])
-
-        self._controller = statevector_controller_execute()
 
         super().__init__(
             QasmBackendConfiguration.from_dict(DEFAULT_CONFIGURATION),
@@ -135,7 +136,7 @@ class StatevectorSimulator(AerBackend):
             else:
                 controller_input['config'][key] = val
         # Execute on controller
-        return self._controller(controller_input)
+        return cpp_execute(self._controller, controller_input)
 
     def _validate(self, qobj, options):
         """Semantic validations of the qobj which cannot be done via schemas.
