@@ -155,6 +155,7 @@ class TestPulseSystemModel(BaseTestPulseSystemModel):
         self.assertAlmostEqual(freqs['U1'], -0.203960780543)
 
     def test_qubit_lo_from_configurable_backend(self):
+        """Test computation of qubit_lo_freq from configurable backend."""
         backend = FakeArmonk()
         test_model = PulseSystemModel.from_backend(backend)
         qubit_lo_from_hamiltonian = test_model.hamiltonian.get_qubit_lo_from_drift()
