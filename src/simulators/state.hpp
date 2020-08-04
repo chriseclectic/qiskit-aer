@@ -255,7 +255,7 @@ void State<state_t>::snapshot_state(const Operations::Op &op,
                                     ExperimentData &data,
                                     std::string name) const {
   name = (name.empty()) ? op.name : name;
-  data.add_pershot_snapshot(name, op.string_params[0], qreg_);
+  data.add_pershot_data(op.string_params[0], qreg_);
 }
 
 
@@ -263,9 +263,7 @@ template <class state_t>
 void State<state_t>::snapshot_creg_memory(const Operations::Op &op,
                                           ExperimentData &data,
                                           std::string name) const {
-  data.add_pershot_snapshot(name,
-                               op.string_params[0],
-                               creg_.memory_hex());
+  data.add_pershot_data(op.string_params[0], creg_.memory_hex());
 }
 
 
@@ -273,9 +271,7 @@ template <class state_t>
 void State<state_t>::snapshot_creg_register(const Operations::Op &op,
                                             ExperimentData &data,
                                             std::string name) const {
-  data.add_pershot_snapshot(name,
-                               op.string_params[0],
-                               creg_.register_hex());
+  data.add_pershot_data(op.string_params[0], creg_.register_hex());
 }
 
 
@@ -285,10 +281,6 @@ void State<state_t>::add_creg_to_data(ExperimentData &data) const {
     std::string memory_hex = creg_.memory_hex();
     data.add_memory_count(memory_hex);
     data. add_pershot_memory(memory_hex);
-  }
-  // Register bits value
-  if (creg_.register_size() > 0) {
-    data. add_pershot_register(creg_.register_hex());
   }
 }
 //-------------------------------------------------------------------------

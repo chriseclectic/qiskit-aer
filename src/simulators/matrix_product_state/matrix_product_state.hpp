@@ -499,19 +499,14 @@ void State::snapshot_pauli_expval(const Operations::Op &op,
 
   // add to snapshot
   Utils::chop_inplace(expval, MPS::get_json_chop_threshold());
-  switch (type) {
-    case SnapshotDataType::average:
-      data.add_average_snapshot("expectation_value", op.string_params[0],
-                            BaseState::creg_.memory_hex(), expval, false);
-      break;
-    case SnapshotDataType::average_var:
-      data.add_average_snapshot("expectation_value", op.string_params[0],
-                            BaseState::creg_.memory_hex(), expval, true);
-      break;
-    case SnapshotDataType::pershot:
-      data.add_pershot_snapshot("expectation_values", op.string_params[0], expval);
-      break;
-  }
+  // switch (type) {
+  //   case SnapshotDataType::average:
+  //     data.add_average_data(op.string_params[0], expval);
+  //     break;
+  //   case SnapshotDataType::pershot:
+  //     data.add_pershot_data(op.string_params[0], expval);
+  //     break;
+  // }
 }
 
 void State::snapshot_matrix_expval(const Operations::Op &op,
@@ -540,15 +535,10 @@ void State::snapshot_matrix_expval(const Operations::Op &op,
   Utils::chop_inplace(expval, MPS::get_json_chop_threshold());
   switch (type) {
     case SnapshotDataType::average:
-      data.add_average_snapshot("expectation_value", op.string_params[0],
-                            BaseState::creg_.memory_hex(), expval, false);
-      break;
-    case SnapshotDataType::average_var:
-      data.add_average_snapshot("expectation_value", op.string_params[0],
-                            BaseState::creg_.memory_hex(), expval, true);
+      data.add_average_data(op.string_params[0], expval);
       break;
     case SnapshotDataType::pershot:
-      data.add_pershot_snapshot("expectation_values", op.string_params[0], expval);
+      data.add_pershot_data(op.string_params[0], expval);
       break;
   }
 }
@@ -558,7 +548,7 @@ void State::snapshot_state(const Operations::Op &op,
 			   std::string name) {
   cvector_t statevector;
   qreg_.full_state_vector(statevector);
-  data.add_pershot_snapshot("statevector", op.string_params[0], statevector);
+  data.add_pershot_data(op.string_params[0], statevector);
 }
 
 void State::snapshot_probabilities(const Operations::Op &op,
@@ -569,8 +559,7 @@ void State::snapshot_probabilities(const Operations::Op &op,
   auto probs = Utils::vec2ket(prob_vector, MPS::get_json_chop_threshold(), 16);
 
   bool variance = type == SnapshotDataType::average_var;
-  data.add_average_snapshot("probabilities", op.string_params[0], 
-  			    BaseState::creg_.memory_hex(), probs, variance);
+  data.add_average_data(op.string_params[0], probs);
 
 }
 

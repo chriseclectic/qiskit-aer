@@ -666,7 +666,7 @@ void State::statevector_snapshot(const Operations::Op &op, ExperimentData &data,
   {
     sum += std::pow(std::abs(statevector[i]), 2);
   }
-  data.add_pershot_snapshot("statevector", op.string_params[0], statevector);
+  data.add_pershot_data(op.string_params[0], statevector);
 }
 
 void State::probabilities_snapshot(const Operations::Op &op, ExperimentData &data, RngEngine &rng)
@@ -716,10 +716,8 @@ void State::probabilities_snapshot(const Operations::Op &op, ExperimentData &dat
       probs[i] /= probabilities_snapshot_samples_;
     }
   }
-  data.add_average_snapshot("probabilities", op.string_params[0],
-                            BaseState::creg_.memory_hex(),
-                            Utils::vec2ket(probs, snapshot_chop_threshold_, 16),
-                            false);
+  data.add_average_data(op.string_params[0],
+                            Utils::vec2ket(probs, snapshot_chop_threshold_, 16));
 }
 
 //-------------------------------------------------------------------------

@@ -471,9 +471,7 @@ void State::snapshot_stabilizer(const Operations::Op &op, ExperimentData &data) 
   // stabilizer part. First Convert simulator clifford table to JSON
   json_t clifford = BaseState::qreg_;
   // Then extract the stabilizer generator list
-  data.add_pershot_snapshot("stabilizer",
-                               op.string_params[0],
-                               clifford["stabilizers"]);
+  data.add_pershot_data(op.string_params[0], clifford["stabilizers"]);
 }
 
 
@@ -500,8 +498,7 @@ void State::snapshot_probabilities(const Operations::Op &op,
 				   1, probs);
 
   // Add snapshot to data
-  data.add_average_snapshot("probabilities", op.string_params[0],
-                            BaseState::creg_.memory_hex(), probs, variance);
+  data.add_average_data(op.string_params[0], probs);
 }
 
 
@@ -597,15 +594,10 @@ void State::snapshot_pauli_expval(const Operations::Op &op,
   Utils::chop_inplace(expval, json_chop_threshold_);
   switch (type) {
     case SnapshotDataType::average:
-      data.add_average_snapshot("expectation_value", op.string_params[0],
-                            BaseState::creg_.memory_hex(), expval, false);
-      break;
-    case SnapshotDataType::average_var:
-      data.add_average_snapshot("expectation_value", op.string_params[0],
-                            BaseState::creg_.memory_hex(), expval, true);
+      data.add_average_data(op.string_params[0], expval);
       break;
     case SnapshotDataType::pershot:
-      data.add_pershot_snapshot("expectation_values", op.string_params[0], expval);
+      data.add_pershot_data(op.string_params[0], expval);
       break;
   }
 }

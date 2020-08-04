@@ -26,6 +26,9 @@
 
 namespace AER {
 
+// Enum class for different data types
+enum class DataType {Average, Conditional, Pershot, Oneshot};
+
 //============================================================================
 // Output data class for Qiskit-Aer
 //============================================================================

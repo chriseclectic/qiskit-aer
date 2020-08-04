@@ -31,6 +31,7 @@ public:
 
   // Experiment data
   ExperimentData data;
+
   uint_t shots;
   uint_t seed;
   double time_taken;

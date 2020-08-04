@@ -491,11 +491,7 @@ void State<densmat_t>::snapshot_probabilities(const Operations::Op &op,
   // get probs as hexadecimal
   auto probs = Utils::vec2ket(measure_probs(op.qubits),
                               json_chop_threshold_, 16);
-  data.add_average_snapshot("probabilities",
-                            op.string_params[0],
-                            BaseState::creg_.memory_hex(),
-                            probs,
-                            variance);
+  data.add_average_data(op.string_params[0], probs);
 }
 
 
@@ -518,10 +514,7 @@ void State<densmat_t>::snapshot_pauli_expval(const Operations::Op &op,
 
   // Add to snapshot
   Utils::chop_inplace(expval, json_chop_threshold_);
-  data.add_average_snapshot("expectation_value",
-                            op.string_params[0],
-                            BaseState::creg_.memory_hex(),
-                            expval, variance);
+  data.add_average_data(op.string_params[0], expval);
 }
 
 
@@ -545,12 +538,7 @@ void State<densmat_t>::snapshot_density_matrix(const Operations::Op &op,
       reduced_state = reduced_density_matrix(op.qubits, qubits_sorted);
     }
   }
-
-  data.add_average_snapshot("density_matrix",
-                            op.string_params[0],
-                            BaseState::creg_.memory_hex(),
-                            std::move(reduced_state),
-                            false);
+  data.add_average_data(op.string_params[0], std::move(reduced_state));
 }
 
 
