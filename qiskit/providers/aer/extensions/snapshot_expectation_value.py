@@ -26,14 +26,14 @@ from qiskit.providers.aer.extensions import Snapshot
 class SnapshotExpectationValue(Snapshot):
     """Snapshot instruction for supported methods of Qasm simulator."""
 
-    def __init__(self, label, op, single_shot=False, variance=False):
+    def __init__(self, label, op, single_shot=False, conditional=False):
         """Create a probability snapshot instruction.
 
         Args:
             label (str): the snapshot label.
             op (Operator): operator to snapshot.
             single_shot (bool): return list for each shot rather than average [Default: False]
-            variance (bool): compute variance of probabilities [Default: False]
+            conditional (bool): If True return conditional snapshot [Default: False].
 
         Raises:
             ExtensionError: if snapshot is invalid.
@@ -67,8 +67,8 @@ class SnapshotExpectationValue(Snapshot):
 
         if single_shot:
             snapshot_type += '_single_shot'
-        elif variance:
-            snapshot_type += '_with_variance'
+        elif conditional:
+            snapshot_type += '_conditional'
         super().__init__(label,
                          snapshot_type=snapshot_type,
                          num_qubits=num_qubits,
@@ -119,7 +119,7 @@ class SnapshotExpectationValue(Snapshot):
 
 def snapshot_expectation_value(self, label, op, qubits,
                                single_shot=False,
-                               variance=False):
+                               conditional=False):
     """Take a snapshot of expectation value <O> of an Operator.
 
     Args:
@@ -127,7 +127,7 @@ def snapshot_expectation_value(self, label, op, qubits,
         op (Operator): operator to snapshot
         qubits (list): the qubits to snapshot.
         single_shot (bool): return list for each shot rather than average [Default: False]
-        variance (bool): compute variance of probabilities [Default: False]
+        conditional (bool): If True return conditional snapshot [Default: False].
 
     Returns:
         QuantumCircuit: with attached instruction.
@@ -141,7 +141,7 @@ def snapshot_expectation_value(self, label, op, qubits,
     return self.append(
         SnapshotExpectationValue(label, op,
                                  single_shot=single_shot,
-                                 variance=variance),
+                                 conditional=conditional),
         snapshot_register)
 
 

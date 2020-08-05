@@ -21,22 +21,27 @@ from qiskit.providers.aer.extensions import Snapshot
 class SnapshotDensityMatrix(Snapshot):
     """Snapshot instruction for density matrix method of Qasm simulator."""
 
-    def __init__(self, label, num_qubits):
+    def __init__(self, label, num_qubits, conditional=False):
         """Create a density matrix state snapshot instruction.
 
         Args:
             label (str): the snapshot label.
             num_qubits (int): the number of qubits to snapshot.
+            conditional (bool): If True return conditional snapshot [Default: False].
 
         Raises:
             ExtensionError: if snapshot is invalid.
         """
+        if conditional:
+            snapshot_type = 'density_matrix_conditional'
+        else:
+            snapshot_type = 'density_matrix'
         super().__init__(label,
-                         snapshot_type='density_matrix',
+                         snapshot_type=snapshot_type,
                          num_qubits=num_qubits)
 
 
-def snapshot_density_matrix(self, label, qubits=None):
+def snapshot_density_matrix(self, label, qubits=None, conditional=False):
     """Take a density matrix snapshot of simulator state.
 
     Args:
@@ -54,7 +59,8 @@ def snapshot_density_matrix(self, label, qubits=None):
     snapshot_register = Snapshot.define_snapshot_register(self, label, qubits)
 
     return self.append(
-        SnapshotDensityMatrix(label, num_qubits=len(snapshot_register)),
+        SnapshotDensityMatrix(label, num_qubits=len(snapshot_register),
+                              conditional=conditional),
         snapshot_register)
 
 
