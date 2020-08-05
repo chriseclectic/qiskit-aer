@@ -128,13 +128,12 @@ public:
   // Load any settings for the State class from a config JSON
   virtual void set_config(const json_t &config);
 
-    //-----------------------------------------------------------------------
+  //-----------------------------------------------------------------------
   // Optional: Add information to metadata 
   //-----------------------------------------------------------------------
 
   // Every state can add information to the metadata structure
-  virtual void add_metadata(ExperimentData &data) const {
-  }
+  virtual void add_metadata(ExperimentData &data) const {}
 
   //-----------------------------------------------------------------------
   // Optional: measurement sampling
@@ -172,6 +171,22 @@ public:
 
   // Add current creg classical bit values to a ExperimentData container
   void add_creg_to_data(ExperimentData &data) const;
+
+  //-----------------------------------------------------------------------
+  // Add additional result data
+  //-----------------------------------------------------------------------
+
+  template <typename T>
+  void add_additional_data(const std::string& key,
+                           DataType type,
+                           const T& value,
+                           ExperimentData &data);
+
+  template <typename T>
+  void add_additional_data(const std::string& key,
+                           DataType type,
+                           T&& value,
+                           ExperimentData &data);
 
   //-----------------------------------------------------------------------
   // Standard snapshots
@@ -283,6 +298,51 @@ void State<state_t>::add_creg_to_data(ExperimentData &data) const {
     data. add_pershot_memory(memory_hex);
   }
 }
+
+template <class state_t>
+template <typename T>
+void State<state_t>::add_additional_data(const std::string& key,
+                                        DataType type,
+                                        T&&value,
+                                        ExperimentData &data) {
+  switch (type) {
+    case DataType::Average:
+      data.add_average_data(key, std::move(value));
+      break;
+    case DataType::Conditional:
+      data.add_conditional_data(key, creg_.memory_hex(), std::move(value));
+      break;
+    case DataType::Pershot:
+      data.add_pershot_data(key, std::move(value));
+      break;
+    case DataType::Oneshot:
+      data.add_oneshot_data(key, std::move(value));
+      break;
+  }
+}
+
+template <class state_t>
+template <typename T>
+void State<state_t>::add_additional_data(const std::string& key,
+                                         DataType type,
+                                         const T& value,
+                                         ExperimentData &data) {
+  switch (type) {
+    case DataType::Average:
+      data.add_average_data(key, value);
+      break;
+    case DataType::Conditional:
+      data.add_conditional_data(key, creg_.memory_hex(), value);
+      break;
+    case DataType::Pershot:
+      data.add_pershot_data(key, value);
+      break;
+    case DataType::Oneshot:
+      data.add_oneshot_data(key, value);
+      break;
+  }
+}
+
 //-------------------------------------------------------------------------
 } // end namespace Base
 //-------------------------------------------------------------------------

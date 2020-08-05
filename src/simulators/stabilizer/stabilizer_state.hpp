@@ -38,8 +38,9 @@ const Operations::OpSet StateOpSet(
   {"CX", "cx", "cy", "cz", "swap", "id", "x", "y", "z", "h", "s", "sdg"},
   // Snapshots
   {"stabilizer", "memory", "register", "probabilities",
-    "probabilities_with_variance", "expectation_value_pauli",
-    "expectation_value_pauli_with_variance",
+    "probabilities_conditional", "probabilities_single_shot",
+    "expectation_value_pauli",
+    "expectation_value_pauli_conditional",
     "expectation_value_pauli_single_shot"}
 );
 
@@ -48,12 +49,9 @@ enum class Gates {id, x, y, z, h, s, sdg, cx, cy, cz, swap};
 // Allowed snapshots enum class
 enum class Snapshots {
   stabilizer, cmemory, cregister,
-    probs, probs_var,
-    expval_pauli, expval_pauli_var, expval_pauli_shot
+    probs, probs_cond, probs_shot,
+    expval_pauli, expval_pauli_cond, expval_pauli_shot
 };
-
-// Enum class for different types of expectation values
-enum class SnapshotDataType {average, average_var, pershot};
 
 //============================================================================
 // Stabilizer Table state class
@@ -153,17 +151,17 @@ protected:
   // Snapshot current qubit probabilities for a measurement (average)
   void snapshot_probabilities(const Operations::Op &op,
                               ExperimentData &data,
-                              bool variance);
+                              DataType type);
 
   void snapshot_probabilities_auxiliary(const reg_t& qubits,
 					std::string outcome,
 					double outcome_prob,
-					stringmap_t<double>& probs);
+					std::map<std::string, double>& probs);
 
   // Snapshot the expectation value of a Pauli operator
   void snapshot_pauli_expval(const Operations::Op &op,
                              ExperimentData &data,
-                             SnapshotDataType type);
+                             DataType type);
 
   //-----------------------------------------------------------------------
   // Config Settings
@@ -211,9 +209,10 @@ const stringmap_t<Snapshots> State::snapshotset_({
   {"memory", Snapshots::cmemory},
   {"register", Snapshots::cregister},
   {"probabilities", Snapshots::probs},
-  {"probabilities_with_variance", Snapshots::probs_var},
+  {"probabilities_conditional", Snapshots::probs_cond},
+  {"probabilities_single_shot", Snapshots::probs_shot},
   {"expectation_value_pauli", Snapshots::expval_pauli}, 
-  {"expectation_value_pauli_with_variance", Snapshots::expval_pauli_var},
+  {"expectation_value_pauli_conditionale", Snapshots::expval_pauli_cond},
   {"expectation_value_pauli_single_shot", Snapshots::expval_pauli_shot}
 });
 
@@ -444,19 +443,22 @@ void State::apply_snapshot(const Operations::Op &op,
       BaseState::snapshot_creg_register(op, data);
       break;
     case Snapshots::probs: {
-      snapshot_probabilities(op, data, false);
+      snapshot_probabilities(op, data, DataType::Average);
     } break;
-    case Snapshots::probs_var: {
-      snapshot_probabilities(op, data, true);
+    case Snapshots::probs_cond: {
+      snapshot_probabilities(op, data, DataType::Conditional);
+    } break;
+    case Snapshots::probs_shot: {
+      snapshot_probabilities(op, data, DataType::Pershot);
     } break;
     case Snapshots::expval_pauli: {
-      snapshot_pauli_expval(op, data, SnapshotDataType::average);
+      snapshot_pauli_expval(op, data, DataType::Average);
     } break;
-    case Snapshots::expval_pauli_var: {
-      snapshot_pauli_expval(op, data, SnapshotDataType::average_var);
+    case Snapshots::expval_pauli_cond: {
+      snapshot_pauli_expval(op, data, DataType::Conditional);
     } break;
     case Snapshots::expval_pauli_shot: {
-      snapshot_pauli_expval(op, data, SnapshotDataType::pershot);
+      snapshot_pauli_expval(op, data, DataType::Pershot);
     } break;
     default:
       // We shouldn't get here unless there is a bug in the snapshotset
@@ -468,16 +470,17 @@ void State::apply_snapshot(const Operations::Op &op,
 
 void State::snapshot_stabilizer(const Operations::Op &op, ExperimentData &data) {
   // We don't want to snapshot the full Clifford table, only the
-  // stabilizer part. First Convert simulator clifford table to JSON
+  // stabilizer part.
+  // TODO: Get stabilizer as vector<string> without going via JSON.
   json_t clifford = BaseState::qreg_;
-  // Then extract the stabilizer generator list
-  data.add_pershot_data(op.string_params[0], clifford["stabilizers"]);
+  BaseState::add_additional_data(op.string_params[0], DataType::Pershot,
+                                 std::move(clifford["stabilizers"]), data);
 }
 
 
 void State::snapshot_probabilities(const Operations::Op &op,
                                    ExperimentData &data,
-                                   bool variance) {
+                                   DataType type) {
   // Check number of qubits being measured is less than 64.
   // otherwise we cant use 64-bit int logic.
   // Practical limits are much lower. For example:
@@ -492,20 +495,18 @@ void State::snapshot_probabilities(const Operations::Op &op,
     throw std::runtime_error(msg);
   }
 
-  stringmap_t<double> probs;
+  std::map<std::string, double> probs;
   snapshot_probabilities_auxiliary(op.qubits,
 				   std::string(op.qubits.size(), 'X'),
 				   1, probs);
-
-  // Add snapshot to data
-  data.add_average_data(op.string_params[0], probs);
+  BaseState::add_additional_data(op.string_params[0], type, std::move(probs), data);
 }
 
 
 void State::snapshot_probabilities_auxiliary(const reg_t& qubits,
 					     std::string outcome,
 					     double outcome_prob,
-					     stringmap_t<double>& probs) {
+					     std::map<std::string, double>& probs) {
   uint_t qubit_for_branching = -1;
   for(uint_t i=0; i<qubits.size(); ++i) {
     uint_t qubit = qubits[qubits.size()-i-1];
@@ -548,7 +549,7 @@ void State::snapshot_probabilities_auxiliary(const reg_t& qubits,
 
 void State::snapshot_pauli_expval(const Operations::Op &op,
 				  ExperimentData &data,
-				  SnapshotDataType type) {
+				  DataType type) {
   // Check empty edge case
   if (op.params_expval_pauli.empty()) {
     throw std::invalid_argument("Invalid expval snapshot (Pauli components are empty).");
@@ -592,14 +593,7 @@ void State::snapshot_pauli_expval(const Operations::Op &op,
 
   // add to snapshot
   Utils::chop_inplace(expval, json_chop_threshold_);
-  switch (type) {
-    case SnapshotDataType::average:
-      data.add_average_data(op.string_params[0], expval);
-      break;
-    case SnapshotDataType::pershot:
-      data.add_pershot_data(op.string_params[0], expval);
-      break;
-  }
+  BaseState::add_additional_data(op.string_params[0], type, std::move(expval), data);
 }
 
 

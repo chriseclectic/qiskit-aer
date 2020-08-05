@@ -41,7 +41,9 @@ const Operations::OpSet StateOpSet(
   {"CX", "u0", "u1", "cx", "cz", "swap", "id", "x", "y", "z", "h",
     "s", "sdg", "t", "tdg", "ccx", "ccz"},
   // Snapshots
-  {"statevector", "probabilities", "memory", "register"}
+  {"statevector", "probabilities",
+  "probabilities_conditional", "probabilities_single_shot",
+  "memory", "register"}
 );
 
 using chpauli_t = CHSimulator::pauli_t;
@@ -54,17 +56,18 @@ uint_t toff_branch_max = 7ULL;
 enum class Snapshots {
   state, 
   statevector,
-  probabilities,
+  probs,
+  probs_cond,
+  probs_shot,
   cmemory,
-  cregister,
-  probs
+  cregister
 };
 
 class State: public Base::State<chstate_t>
 {
 public:
   using BaseState = Base::State<chstate_t>;
-  
+
   State() : BaseState(StateOpSet) {}
   virtual ~State() = default;
 
@@ -131,7 +134,9 @@ protected:
   void statevector_snapshot(const Operations::Op &op, ExperimentData &data, RngEngine &rng);
   //Compute probabilities from a stabilizer rank decomposition
   //TODO: Check ordering/output format...
-  void probabilities_snapshot(const Operations::Op &op, ExperimentData &data, RngEngine &rng);
+  void probabilities_snapshot(const Operations::Op &op, ExperimentData &data,
+                              DataType type,
+                              RngEngine &rng);
 
   const static stringmap_t<Gates> gateset_;
   const static stringmap_t<Snapshots> snapshotset_;
@@ -204,7 +209,9 @@ const stringmap_t<Gates> State::gateset_({
 const stringmap_t<Snapshots> State::snapshotset_({
   {"state", Snapshots::state},
   {"statevector", Snapshots::statevector},
-  {"probabilities", Snapshots::probabilities},
+  {"probabilities", Snapshots::probs},
+  {"probabilities_conditional", Snapshots::probs_cond},
+  {"probabilities_single_shot", Snapshots::probs_shot},
   {"memory", Snapshots::cmemory},
   {"register", Snapshots::cregister}
 });
@@ -647,9 +654,20 @@ void State::apply_snapshot(const Operations::Op &op, ExperimentData &data, RngEn
     case Snapshots::statevector:
       statevector_snapshot(op, data, rng);
       break;
-    case Snapshots::probabilities:
-      probabilities_snapshot(op, data, rng);
+    case Snapshots::probs: {
+      // get probs as hexadecimal
+      probabilities_snapshot(op, data, DataType::Average, rng);
       break;
+    }
+    case Snapshots::probs_cond: {
+      // get probs as hexadecimal
+      probabilities_snapshot(op, data, DataType::Conditional, rng);
+    } break;
+    case Snapshots::probs_shot: {
+      // get probs as hexadecimal
+      probabilities_snapshot(op, data, DataType::Pershot, rng);
+    } break;
+
     default:
       throw std::invalid_argument("CH::State::invlaid snapshot instruction \'"+
                               op.name + "\'.");
@@ -669,7 +687,9 @@ void State::statevector_snapshot(const Operations::Op &op, ExperimentData &data,
   data.add_pershot_data(op.string_params[0], statevector);
 }
 
-void State::probabilities_snapshot(const Operations::Op &op, ExperimentData &data, RngEngine &rng)
+void State::probabilities_snapshot(const Operations::Op &op,
+                                   ExperimentData &data, DataType type,
+                                   RngEngine &rng)
 {
   rvector_t probs;
   if (op.qubits.size() == 0)
@@ -716,8 +736,9 @@ void State::probabilities_snapshot(const Operations::Op &op, ExperimentData &dat
       probs[i] /= probabilities_snapshot_samples_;
     }
   }
-  data.add_average_data(op.string_params[0],
-                            Utils::vec2ket(probs, snapshot_chop_threshold_, 16));
+  BaseState::add_additional_data(op.string_params[0], type,
+                                 Utils::vec2ket(probs, snapshot_chop_threshold_, 16),
+                                 data);
 }
 
 //-------------------------------------------------------------------------
