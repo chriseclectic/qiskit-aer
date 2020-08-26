@@ -16,7 +16,7 @@ from qiskit.quantum_info import Operator, Statevector
 from qiskit.quantum_info.operators.predicates import matrix_equal
 
 from qiskit.providers.aer.pulse.system_models.duffing_model_generators import duffing_system_model
-from qiskit.pulse import (Schedule, Play, Acquire, SamplePulse, DriveChannel, AcquireChannel,
+from qiskit.pulse import (Schedule, Play, Acquire, Waveform, DriveChannel, AcquireChannel,
                           MemorySlot)
 
 from qiskit.providers.aer import QasmSimulator
@@ -428,7 +428,7 @@ def model_and_pi_schedule():
                                  dt=1.0)
 
     # note: parameters set so that area under curve is 1/4
-    sample_pulse = SamplePulse(np.ones(50))
+    sample_pulse = Waveform(np.ones(50))
 
     # construct schedule
     schedule = Schedule(name='test_sched')

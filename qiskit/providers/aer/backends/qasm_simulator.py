@@ -398,7 +398,7 @@ class QasmSimulator(AerBackend):
             'gates': []
         })
 
-        # Statvector methods
+        # Statevector methods
         if method in ['statevector', 'statevector_gpu', 'statevector_thrust']:
             config.description = 'A C++ QasmQobj statevector simulator with noise'
 
