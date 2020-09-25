@@ -11,7 +11,7 @@ if(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64" OR CMAKE_HOST_SYSTEM_PROCESSOR 
     # machine running the code has SIMD support
     set(SIMD_SOURCE_FILE "../../../../../src/simulators/statevector/qv_avx2.cpp")
     if(APPLE OR UNIX)
-        set_source_files_properties(${SIMD_SOURCE_FILE} PROPERTIES COMPILE_FLAGS "-mfma -mavx2")
+        # set_source_files_properties(${SIMD_SOURCE_FILE} PROPERTIES COMPILE_FLAGS "-mfma -mavx2")
     elseif(MSVC)
         set_source_files_properties(${SIMD_SOURCE_FILE} PROPERTIES COMPILE_FLAGS "/arch:AVX2")
     endif()
