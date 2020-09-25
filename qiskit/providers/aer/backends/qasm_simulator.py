@@ -21,7 +21,6 @@ from qiskit.providers.aer.backends.backend_utils import (cpp_execute,
                                                          available_methods,
                                                          MAX_QUBITS_STATEVECTOR
                                                          )
-from qiskit.providers.aer.noise.noise_model import NoiseModel
 from qiskit.providers.aer.version import __version__
 # pylint: disable=import-error, no-name-in-module
 from qiskit.providers.aer.backends.controller_wrappers import qasm_controller_execute
@@ -236,7 +235,31 @@ class QasmSimulator(AerBackend):
       than or equal to enable fusion optimization [Default: 20]
     """
 
-    # Cache available methods
+    _DEFAULT_CONFIGURATION = {
+        'backend_name': 'qasm_simulator',
+        'backend_version': __version__,
+        'n_qubits': MAX_QUBITS_STATEVECTOR,
+        'url': 'https://github.com/Qiskit/qiskit-aer',
+        'simulator': True,
+        'local': True,
+        'conditional': True,
+        'open_pulse': False,
+        'memory': True,
+        'max_shots': int(1e6),
+        'description': 'A C++ QasmQobj simulator with noise',
+        'coupling_map': None,
+        'basis_gates': [
+            'u1', 'u2', 'u3', 'p', 'r', 'rx', 'ry', 'rz', 'id', 'x',
+            'y', 'z', 'h', 's', 'sdg', 'sx', 't', 'tdg', 'swap', 'cx',
+            'cy', 'cz', 'csx', 'cp', 'cu1', 'cu2', 'cu3', 'rxx', 'ryy',
+            'rzz', 'rzx', 'ccx', 'cswap', 'mcx', 'mcy', 'mcz', 'mcsx',
+            'mcp', 'mcu1', 'mcu2', 'mcu3', 'mcrx', 'mcry', 'mcrz',
+            'mcr', 'mcswap', 'unitary', 'diagonal', 'multiplexer',
+            'initialize', 'kraus', 'roerror', 'delay'
+        ],
+        'gates': []
+    }
+
     _AVAILABLE_METHODS = None
 
     def __init__(self,
@@ -268,6 +291,9 @@ class QasmSimulator(AerBackend):
     @classmethod
     def from_backend(cls, backend, **options):
         """Initialize simulator from backend."""
+        # Avoid cyclic import
+        from qiskit.providers.aer.noise.noise_model import NoiseModel
+
         # Get configuration and properties from backend
         configuration = copy.copy(backend.configuration())
         properties = copy.copy(backend.properties())
@@ -360,39 +386,8 @@ class QasmSimulator(AerBackend):
     def _method_configuration(method=None):
         """Return QasmBackendConfiguration."""
         # Default configuration
-        config = QasmBackendConfiguration.from_dict({
-            'backend_name':
-            'qasm_simulator',
-            'backend_version':
-            __version__,
-            'n_qubits':
-            MAX_QUBITS_STATEVECTOR,
-            'url':
-            'https://github.com/Qiskit/qiskit-aerß',
-            'simulator':
-            True,
-            'local':
-            True,
-            'conditional':
-            True,
-            'open_pulse':
-            False,
-            'memory':
-            True,
-            'max_shots':
-            int(1e6),
-            'description':
-            'A C++ QasmQobj simulator with noise',
-            'coupling_map':
-            None,
-            'basis_gates': [
-                'u1', 'u2', 'u3', 'cx', 'cz', 'id', 'x', 'y', 'z', 'h', 's',
-                'sdg', 't', 'tdg', 'swap', 'ccx', 'unitary', 'initialize',
-                'cu1', 'cu2', 'cu3', 'cswap', 'mcx', 'mcy', 'mcz', 'mcu1',
-                'mcu2', 'mcu3', 'mcswap', 'multiplexer', 'kraus', 'roerror'
-            ],
-            'gates': []
-        })
+        config = QasmBackendConfiguration.from_dict(
+            QasmSimulator._DEFAULT_CONFIGURATION)
 
         # Statevector methods
         if method in ['statevector', 'statevector_gpu', 'statevector_thrust']:
@@ -405,8 +400,11 @@ class QasmSimulator(AerBackend):
             config.n_qubits = config.n_qubits // 2
             config.description = 'A C++ QasmQobj density matrix simulator with noise'
             config.basis_gates = [
-                'u1', 'u2', 'u3', 'cx', 'cz', 'id', 'x', 'y', 'z', 'h', 's',
-                'sdg', 't', 'tdg', 'swap', 'ccx', 'unitary', 'kraus', 'roerror'
+                'u1', 'u2', 'u3', 'p', 'r', 'rx', 'ry', 'rz', 'id', 'x',
+                'y', 'z', 'h', 's', 'sdg', 'sx', 't', 'tdg', 'swap', 'cx',
+                'cy', 'cz', 'csx', 'cp', 'cu1', 'cu2', 'cu3', 'rxx', 'ryy',
+                'rzz', 'rzx', 'ccx', 'unitary', 'diagonal', 'kraus', 'superop'
+                'roerror', 'delay'
             ]
 
         # Matrix product state method
@@ -414,7 +412,7 @@ class QasmSimulator(AerBackend):
             config.description = 'A C++ QasmQobj matrix product state simulator with noise'
             config.basis_gates = [
                 'u1', 'u2', 'u3', 'cx', 'cz', 'id', 'x', 'y', 'z', 'h', 's',
-                'sdg', 't', 'tdg', 'swap', 'ccx', 'unitary', 'roerror'
+                'sdg', 't', 'tdg', 'swap', 'ccx', 'unitary', 'roerror', 'delay'
             ]
 
         # Stabilizer method
@@ -422,8 +420,8 @@ class QasmSimulator(AerBackend):
             config.n_qubits = 5000  # TODO: estimate from memory
             config.description = 'A C++ QasmQobj Clifford stabilizer simulator with noise'
             config.basis_gates = [
-                'cx', 'cz', 'id', 'x', 'y', 'z', 'h', 's', 'sdg', 'swap',
-                'roerror'
+                'id', 'x', 'y', 'z', 'h', 's', 'sdg', 'cx', 'cy', 'cz',
+                'swap', 'roerror', 'delay'
             ]
 
         # Extended stabilizer method
@@ -431,21 +429,8 @@ class QasmSimulator(AerBackend):
             config.n_qubits = 63  # TODO: estimate from memory
             config.description = 'A C++ QasmQobj ranked stabilizer simulator with noise'
             config.basis_gates = [
-                'cx',
-                'cz',
-                'id',
-                'x',
-                'y',
-                'z',
-                'h',
-                's',
-                'sdg',
-                'swap',
-                'roerror',
-                'u0',
-                'u1',
-                'ccx',
-                'ccz',
+                'cx', 'cz', 'id', 'x', 'y', 'z', 'h', 's', 'sdg', 'swap',
+                'u0', 'u1', 'ccx', 'ccz', 'roerror', 'delay'
             ]
 
         return config
