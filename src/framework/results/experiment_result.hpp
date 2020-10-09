@@ -16,6 +16,7 @@
 #define _aer_framework_results_experiment_result_hpp_
 
 #include "framework/results/legacy/experiment_data.hpp"
+#include "framework/results/metadata.hpp"
 
 namespace AER {
 
@@ -41,13 +42,7 @@ public:
 
   // Metadata
   json_t header;
-  stringmap_t<json_t> metadata;
-  
-  // Append metadata for a given key.
-  // This assumes the metadata value is a dictionary and appends
-  // any new values
-  template <typename T>
-  void add_metadata(const std::string &key, T &&data);
+  Metadata metadata;
 
   // Serialize engine data to JSON
   json_t to_json();
@@ -60,54 +55,11 @@ public:
 };
 
 //------------------------------------------------------------------------------
-// Add metadata
+// Combine
 //------------------------------------------------------------------------------
-template <typename T>
-void ExperimentResult::add_metadata(const std::string &key, T &&meta) {
-  // Use implicit to_json conversion function for T
-  json_t jdata = meta;
-  add_metadata(key, std::move(jdata));
-}
-
-template <>
-void ExperimentResult::add_metadata(const std::string &key, json_t &&meta) {
-  auto elt = metadata.find("key");
-  if (elt == metadata.end()) {
-    // If key doesn't already exist add new data
-    metadata[key] = std::move(meta);
-  } else {
-    // If key already exists append with additional data
-    elt->second.update(meta.begin(), meta.end());
-  }
-}
-
-template <>
-void ExperimentResult::add_metadata(const std::string &key, const json_t &meta) {
-  auto elt = metadata.find("key");
-  if (elt == metadata.end()) {
-    // If key doesn't already exist add new data
-    metadata[key] = meta;
-  } else {
-    // If key already exists append with additional data
-    elt->second.update(meta.begin(), meta.end());
-  }
-}
-
-template <>
-void ExperimentResult::add_metadata(const std::string &key, json_t &meta) {
-  const json_t &const_meta = meta;
-  add_metadata(key, const_meta);
-}
-
 ExperimentResult& ExperimentResult::combine(ExperimentResult &&other) {
-  // Combine data
   legacy_data.combine(std::move(other.legacy_data));
-
-  // Combine metadata
-  for (const auto &pair : other.metadata) {
-    metadata[pair.first] = pair.second;
-  }
-
+  metadata.combine(std::move(other.metadata));
   return *this;
 }
 
@@ -134,8 +86,7 @@ json_t ExperimentResult::to_json() {
   result["time_taken"] = time_taken;
   if (header.empty() == false)
     result["header"] = header;
-  if (metadata.empty() == false)
-    result["metadata"] = metadata;
+  result["metadata"] = metadata.to_json();
   return result;
 }
 

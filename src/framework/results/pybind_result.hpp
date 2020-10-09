@@ -17,6 +17,7 @@
 
 #include "framework/pybind_basics.hpp"
 #include "framework/results/legacy/pybind_data.hpp"
+#include "framework/results/data/pybind_data.hpp"
 #include "framework/results/result.hpp"
 
 //------------------------------------------------------------------------------
@@ -24,6 +25,9 @@
 //------------------------------------------------------------------------------
 
 namespace AerToPy {
+
+// Move an ExperimentResult object to a Python dict
+template <> py::object to_python(AER::Metadata &&metadata);
 
 // Move an ExperimentResult object to a Python dict
 template <> py::object to_python(AER::ExperimentResult &&result);
@@ -39,6 +43,15 @@ template <> py::object to_python(AER::Result &&result);
 //============================================================================
 
 template <>
+py::object AerToPy::to_python(AER::Metadata &&metadata) {
+  py::dict pydata;
+  add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, json_t, 1>&&>(metadata));
+  add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, json_t, 2>&&>(metadata));
+  add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, json_t, 3>&&>(metadata));
+  return std::move(pydata);
+}
+
+template <>
 py::object AerToPy::to_python(AER::ExperimentResult &&result) {
   py::dict pyexperiment;
 
@@ -46,6 +59,7 @@ py::object AerToPy::to_python(AER::ExperimentResult &&result) {
   pyexperiment["seed_simulator"] = result.seed;
 
   pyexperiment["data"] = AerToPy::from_data(std::move(result.legacy_data));
+  pyexperiment["metadata"] = AerToPy::to_python(std::move(result.metadata));
 
   pyexperiment["success"] = (result.status == AER::ExperimentResult::Status::completed);
   switch (result.status) {
@@ -59,15 +73,11 @@ py::object AerToPy::to_python(AER::ExperimentResult &&result) {
       pyexperiment["status"] = "EMPTY";
   }
   pyexperiment["time_taken"] = result.time_taken;
+
   if (result.header.empty() == false) {
     py::object tmp;
     from_json(result.header, tmp);
     pyexperiment["header"] = std::move(tmp);
-  }
-  if (result.metadata.empty() == false) {
-    py::object tmp;
-    from_json(result.metadata, tmp);
-    pyexperiment["metadata"] = std::move(tmp);
   }
   return std::move(pyexperiment);
 }
@@ -87,18 +97,13 @@ py::object AerToPy::to_python(AER::Result &&result) {
   for(AER::ExperimentResult& exp : result.results)
     exp_results.append(AerToPy::to_python(std::move(exp)));
   pyresult["results"] = std::move(exp_results);
-
+  pyresult["metadata"] = AerToPy::to_python(std::move(result.metadata));
   // For header and metadata we continue using the json->pyobject casting
   //   bc these are assumed to be small relative to the ExperimentResults
   if (result.header.empty() == false) {
     py::object tmp;
     from_json(result.header, tmp);
     pyresult["header"] = std::move(tmp);
-  }
-  if (result.metadata.empty() == false) {
-    py::object tmp;
-    from_json(result.metadata, tmp);
-    pyresult["metadata"] = std::move(tmp);
   }
   pyresult["success"] = (result.status == AER::Result::Status::completed);
   switch (result.status) {

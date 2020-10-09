@@ -293,7 +293,7 @@ void UnitaryController::run_circuit_helper(
 
   // Output data container
   result.set_config(config);
-  result.add_metadata("method", state.name());
+  result.metadata.add(state.name(), "method");
 
   // Optimize circuit
   const std::vector<Operations::Op>* op_ptr = &circ.ops;
