@@ -16,6 +16,7 @@
 #define _aer_framework_results_experiment_result_hpp_
 
 #include "framework/results/legacy/experiment_data.hpp"
+#include "framework/results/data.hpp"
 #include "framework/results/metadata.hpp"
 
 namespace AER {
@@ -31,7 +32,8 @@ public:
   enum class Status {empty, completed, error};
 
   // Experiment data
-  ExperimentData legacy_data; // Legacy data
+  Data data;
+  ExperimentData legacy_data; // Legacy snapshot data
   uint_t shots;
   uint_t seed;
   double time_taken;
@@ -48,28 +50,36 @@ public:
   json_t to_json();
 
   // Set the output data config options
-  void set_config(const json_t &config) { legacy_data.set_config(config); }
+  void set_config(const json_t &config);
 
   // Combine stored data
   ExperimentResult& combine(ExperimentResult &&other);
 };
 
 //------------------------------------------------------------------------------
-// Combine
+// Implementation
 //------------------------------------------------------------------------------
+
 ExperimentResult& ExperimentResult::combine(ExperimentResult &&other) {
   legacy_data.combine(std::move(other.legacy_data));
+  data.combine(std::move(other.data));
   metadata.combine(std::move(other.metadata));
   return *this;
 }
 
-//------------------------------------------------------------------------------
-// JSON serialization
-//------------------------------------------------------------------------------
+void ExperimentResult::set_config(const json_t &config) {
+  data.set_config(config);
+  legacy_data.set_config(config);
+}
+
 json_t ExperimentResult::to_json() {
   // Initialize output as additional data JSON
   json_t result;
-  result["data"] = legacy_data.to_json();
+  result["data"] = data.to_json();
+  json_t tmp = legacy_data.to_json();
+  if (JSON::check_key("snapshots", tmp)) {
+    result["data"]["snapshots"] = std::move(tmp["snapshots"]);
+  }
   result["shots"] = shots;
   result["seed_simulator"] = seed;
   result["success"] = (status == Status::completed);

@@ -319,7 +319,7 @@ void UnitaryController::run_circuit_helper(
   state.add_creg_to_data(result);
 
   // Add final state unitary to the data
-  result.legacy_data.add_additional_data("unitary", state.qreg().move_to_matrix());
+  result.data.add_single(state.qreg().move_to_matrix(), "unitary");
 }
 
 //-------------------------------------------------------------------------

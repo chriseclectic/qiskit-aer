@@ -82,28 +82,34 @@ py::object AerToPy::to_python(AER::ListData<T> &&src) {
 template <template <class> class Data, class T, size_t N>
 py::object AerToPy::to_python(AER::DataMap<Data, T, N> &&src) {
   py::dict pydata;
-  for (auto& elt : src.value()) {
-    pydata[elt.first.data()] = AerToPy::to_python(std::move(elt.second));
+  if (src.enabled) {
+    for (auto& elt : src.value()) {
+      pydata[elt.first.data()] = AerToPy::to_python(std::move(elt.second));
+    }
   }
   return std::move(pydata);
 }
 
 template <template <class> class Data, class T, size_t N>
 void AerToPy::add_to_python(py::dict &pydata, AER::DataMap<Data, T, N> &&src) {
-  for (auto& elt : src.value()) {
-    auto& key = elt.first;
-    py::dict item = (pydata.contains(key.data())) 
-      ? std::move(pydata[key.data()])
-      : py::dict();
-    AerToPy::add_to_python(item, std::move(elt.second));
-    pydata[key.data()] = std::move(item);
+  if (src.enabled) {
+    for (auto& elt : src.value()) {
+      auto& key = elt.first;
+      py::dict item = (pydata.contains(key.data())) 
+        ? std::move(pydata[key.data()])
+        : py::dict();
+      AerToPy::add_to_python(item, std::move(elt.second));
+      pydata[key.data()] = std::move(item);
+    }
   }
 }
 
 template <template <class> class Data, class T>
 void AerToPy::add_to_python(py::dict &pydata, AER::DataMap<Data, T, 1> &&src) {
-  for (auto& elt : src.value()) {
-    pydata[elt.first.data()] = AerToPy::to_python(std::move(elt.second));
+  if (src.enabled) {
+    for (auto& elt : src.value()) {
+      pydata[elt.first.data()] = AerToPy::to_python(std::move(elt.second));
+    }
   }
 }
 

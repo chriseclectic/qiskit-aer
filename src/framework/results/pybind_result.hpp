@@ -27,6 +27,9 @@
 namespace AerToPy {
 
 // Move an ExperimentResult object to a Python dict
+template <> py::object to_python(AER::Data &&data);
+
+// Move an ExperimentResult object to a Python dict
 template <> py::object to_python(AER::Metadata &&metadata);
 
 // Move an ExperimentResult object to a Python dict
@@ -43,11 +46,29 @@ template <> py::object to_python(AER::Result &&result);
 //============================================================================
 
 template <>
+py::object AerToPy::to_python(AER::Data &&data) {
+  py::dict pydata;
+
+  AerToPy::add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, AER::Vector<complexf_t>>&&>(data));
+  AerToPy::add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, AER::Vector<complex_t>>&&>(data));
+  AerToPy::add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, matrix<complexf_t>>&&>(data));
+  AerToPy::add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, matrix<complex_t>>&&>(data));
+
+  if (data.counts.enabled) {
+    pydata["counts"] = AerToPy::to_python(std::move(data.counts));
+  }
+  if (data.memory.enabled) {
+    pydata["memory"] = AerToPy::to_python(std::move(data.memory));
+  }
+  return std::move(pydata);
+}
+
+template <>
 py::object AerToPy::to_python(AER::Metadata &&metadata) {
   py::dict pydata;
-  add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, json_t, 1>&&>(metadata));
-  add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, json_t, 2>&&>(metadata));
-  add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, json_t, 3>&&>(metadata));
+  AerToPy::add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, json_t, 1>&&>(metadata));
+  AerToPy::add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, json_t, 2>&&>(metadata));
+  AerToPy::add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, json_t, 3>&&>(metadata));
   return std::move(pydata);
 }
 
@@ -58,7 +79,13 @@ py::object AerToPy::to_python(AER::ExperimentResult &&result) {
   pyexperiment["shots"] = result.shots;
   pyexperiment["seed_simulator"] = result.seed;
 
-  pyexperiment["data"] = AerToPy::from_data(std::move(result.legacy_data));
+  pyexperiment["data"] =  AerToPy::to_python(std::move(result.data));
+  // Add legacy snapshot data
+  py::dict legacy = AerToPy::from_data(std::move(result.legacy_data));
+  if (legacy.contains("snapshots")) {
+    pyexperiment["data"]["snapshots"] = std::move(legacy["snapshots"]);
+  }
+
   pyexperiment["metadata"] = AerToPy::to_python(std::move(result.metadata));
 
   pyexperiment["success"] = (result.status == AER::ExperimentResult::Status::completed);
