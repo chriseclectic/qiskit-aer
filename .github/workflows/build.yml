@@ -61,7 +61,7 @@ jobs:
   wheel:
     name: compile-wheel-${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    needs: ["lint"]
+    needs: ["standalone"]
     strategy:
       matrix:
         os: ["macOS-latest", "ubuntu-latest"]
