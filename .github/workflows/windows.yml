@@ -1,18 +1,52 @@
-name: Windows compile tests
+name: Windows Tests
 on:
   push:
     branches: [master, 'stable/*']
   pull_request:
     branches: [master, 'stable/*']
 jobs:
+  standalone:
+    name: compile-standalone
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.7
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.7
+      - name: Install deps
+        run: pip install "urllib3<1.26" conan
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v1.0.2
+      - name: Compile Standalone
+        run: |
+          set -e
+          mkdir out; cd out; cmake .. -DBUILD_TESTS=1
+          cmake --build . --config Release
+        shell: bash
+      - name: Run Unit Tests
+        run: |
+          cd out/bin
+          for test in test*
+          do echo $test
+            if ! ./$test
+            then
+              ERR=1
+            fi
+          done
+          if [ ! -z "$ERR" ]
+          then
+            exit 1
+          fi
+        shell: bash
   tests:
-    name: tests-python${{ matrix.python-version }}-${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: tests-python${{ matrix.python-version }}
+    runs-on: windows-latest
+    needs: [standalone]
     timeout-minutes: 25
     strategy:
       matrix:
         python-version: [3.6, 3.7, 3.8]
-        os: ["windows-latest"]
     env:
       AER_THRUST_BACKEND: OMP
       QISKIT_TEST_CAPTURE_STREAMS: 1
