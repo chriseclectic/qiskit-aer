@@ -86,8 +86,6 @@ jobs:
           python-version: 3.7
       - name: Install deps
         run: pip install "urllib3<1.26" conan
-      - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v1.0.2
       - name: Compile Standalone
         run: |
           set -e
