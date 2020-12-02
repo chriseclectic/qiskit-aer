@@ -38,7 +38,6 @@ jobs:
           pycodestyle --ignore=E402,W504 --max-line-length=100 qiskit/providers/aer
           pylint -j 2 -rn qiskit/providers/aer
   sdist:
-    name: compile-sdist-python${{ matrix.python-version }}-${{ matrix.platform.os }}
     runs-on: ${{ matrix.platform.os }}
     needs: ["lint"]
     strategy:
@@ -82,7 +81,6 @@ jobs:
           aer-test/bin/pip check
         shell: bash
   tests:
-    name: tests-python${{ matrix.python-version }}-${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     needs: [sdist, lint]
     timeout-minutes: 25

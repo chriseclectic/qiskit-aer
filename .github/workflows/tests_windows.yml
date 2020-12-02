@@ -20,9 +20,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~\AppData\Local\pip\Cache
-          key: ${{ runner.os }}-${{ matrix.python-version}}-pip-list-${{ hashFiles('setup.py','requirements-dev.txt','constraints.txt') }}
+          key: ${{ runner.os }}-${{ matrix.python-version}}-pip-lint-${{ hashFiles('setup.py','requirements-dev.txt','constraints.txt') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version}}-pip-list-
+            ${{ runner.os }}-${{ matrix.python-version}}-pip-lint-
             ${{ runner.os }}-${{ matrix.python-version}}-pip-
             ${{ runner.os }}-${{ matrix.python-version}}-
       - name: Install deps
@@ -36,8 +36,8 @@ jobs:
           set -e
           pycodestyle --ignore=E402,W504 --max-line-length=100 qiskit/providers/aer
           pylint -j 2 -rn qiskit/providers/aer
+        shell: bash
   tests:
-    name: tests-python${{ matrix.python-version }}-${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     needs: ["lint"]
     timeout-minutes: 25
