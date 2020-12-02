@@ -72,12 +72,12 @@ jobs:
         with:
           python-version: 3.8
       - name: Install deps
-        run: python -m pip install -U cibuildwheel==1.5.5
+        run: python -m pip install -U cibuildwheel==1.7.0
       - name: Build Wheels
         env:
           CIBW_BEFORE_ALL_LINUX: "yum install -y openblas-devel"
           CIBW_BEFORE_BUILD: "pip install -U virtualenv pybind11"
-          CIBW_SKIP: "cp27-* cp34-* cp35-* pp*"
+          CIBW_SKIP: "cp27-* cp34-* cp35-* cp39-* pp*"
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux2010"
           CIBW_MANYLINUX_I686_IMAGE: "manylinux2010"
           CIBW_TEST_COMMAND: "python3 {project}/tools/verify_wheels.py"
