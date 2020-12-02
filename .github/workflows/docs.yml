@@ -1,4 +1,4 @@
-name: Docs and Tutorials
+name: Doc and tutorial tests
 on:
   push:
     branches: [master, 'stable/*']

@@ -40,13 +40,14 @@ jobs:
           fi
         shell: bash
   tests:
-    name: tests-python${{ matrix.python-version }}
-    runs-on: windows-latest
+    name: tests-python${{ matrix.python-version }}-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     needs: [standalone]
     timeout-minutes: 25
     strategy:
       matrix:
         python-version: [3.6, 3.7, 3.8]
+        os: ["windows-latest"]
     env:
       AER_THRUST_BACKEND: OMP
       QISKIT_TEST_CAPTURE_STREAMS: 1
