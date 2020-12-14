@@ -18,6 +18,8 @@
 #include "framework/pybind_basics.hpp"
 #include "framework/results/legacy/pybind_data.hpp"
 #include "framework/results/data/pybind_data.hpp"
+#include "framework/results/data/pybind_data_cmatrix.hpp"
+#include "framework/results/data/pybind_data_cvector.hpp"
 #include "framework/results/result.hpp"
 
 //------------------------------------------------------------------------------
@@ -49,10 +51,8 @@ template <>
 py::object AerToPy::to_python(AER::Data &&data) {
   py::dict pydata;
 
-  AerToPy::add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, AER::Vector<complexf_t>>&&>(data));
-  AerToPy::add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, AER::Vector<complex_t>>&&>(data));
-  AerToPy::add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, matrix<complexf_t>>&&>(data));
-  AerToPy::add_to_python(pydata, static_cast<AER::DataMap<AER::SingleData, matrix<complex_t>>&&>(data));
+  AerToPy::add_to_python(pydata, static_cast<AER::DataCVector&&>(data));
+  AerToPy::add_to_python(pydata, static_cast<AER::DataCMatrix&&>(data));
 
   if (data.counts.enabled) {
     pydata["counts"] = AerToPy::to_python(std::move(data.counts));
