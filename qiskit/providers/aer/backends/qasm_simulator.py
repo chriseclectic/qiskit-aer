@@ -292,7 +292,8 @@ class QasmSimulator(AerBackend):
             'rzz', 'rzx', 'ccx', 'cswap', 'mcx', 'mcy', 'mcz', 'mcsx',
             'mcp', 'mcu1', 'mcu2', 'mcu3', 'mcrx', 'mcry', 'mcrz',
             'mcr', 'mcswap', 'unitary', 'diagonal', 'multiplexer',
-            'initialize', 'kraus', 'roerror', 'delay', 'pauli'
+            'initialize', 'kraus', 'roerror', 'delay', 'pauli',
+            'save_expval'
         ],
         'gates': []
     }
@@ -442,7 +443,7 @@ class QasmSimulator(AerBackend):
                 'y', 'z', 'h', 's', 'sdg', 'sx', 't', 'tdg', 'swap', 'cx',
                 'cy', 'cz', 'cp', 'cu1', 'rxx', 'ryy',
                 'rzz', 'rzx', 'ccx', 'unitary', 'diagonal', 'kraus', 'superop'
-                'roerror', 'delay', 'pauli'
+                'roerror', 'delay', 'pauli', 'save_expval'
             ]
 
         # Matrix product state method
@@ -451,7 +452,7 @@ class QasmSimulator(AerBackend):
             config.basis_gates = [
                 'u1', 'u2', 'u3', 'u', 'p', 'cp', 'cx', 'cz', 'id', 'x', 'y', 'z', 'h', 's',
                 'sdg', 'sx', 't', 'tdg', 'swap', 'ccx', 'unitary', 'roerror', 'delay',
-                'r', 'rx', 'ry', 'rz', 'rxx', 'ryy', 'rzz', 'rzx'
+                'r', 'rx', 'ry', 'rz', 'rxx', 'ryy', 'rzz', 'rzx', 'save_expval'
             ]
 
         # Stabilizer method
@@ -460,7 +461,7 @@ class QasmSimulator(AerBackend):
             config.description = 'A C++ QasmQobj Clifford stabilizer simulator with noise'
             config.basis_gates = [
                 'id', 'x', 'y', 'z', 'h', 's', 'sdg', 'sx', 'cx', 'cy', 'cz',
-                'swap', 'roerror', 'delay'
+                'swap', 'roerror', 'delay', 'save_expval'
             ]
 
         # Extended stabilizer method

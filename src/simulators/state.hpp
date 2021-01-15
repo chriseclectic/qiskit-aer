@@ -23,11 +23,6 @@
 
 namespace AER {
 
-// Result data subtypes
-enum class DataSubType {
-  single, list, c_list, accum, c_accum, average, c_average
-};
-
 namespace Base {
 
 //=========================================================================
@@ -39,6 +34,7 @@ class State {
 
 public:
   using ignore_argument = void;
+  using DataSubType = Operations::DataSubType;
 
   //-----------------------------------------------------------------------
   // Constructors
@@ -130,6 +126,13 @@ public:
   virtual size_t required_memory_mb(uint_t num_qubits,
                                     const std::vector<Operations::Op> &ops)
                                     const = 0;
+
+  // Return the expectation value of a N-qubit Pauli operator
+  // If the simulator does not support Pauli expectation value this should
+  // raise an exception.
+  // TODO: MAKE VIRTUAL
+  virtual double pauli_expval(const reg_t &qubits,
+                              const std::string& pauli) {return 0.;};
 
   //-----------------------------------------------------------------------
   // Optional: Load config settings
@@ -224,6 +227,13 @@ public:
   void save_data_pershot(ExperimentResult &result,
                          const std::string &key, T&& datum,
                          DataSubType type = DataSubType::list) const;
+
+  //-----------------------------------------------------------------------
+  // Common instructions
+  //-----------------------------------------------------------------------
+  
+  // Apply a save expectation value instruction
+  void apply_save_expval(const Operations::Op &op, ExperimentResult &result);
 
   //-----------------------------------------------------------------------
   // Standard snapshots
@@ -487,6 +497,28 @@ void State<state_t>::snapshot_creg_register(const Operations::Op &op,
   result.legacy_data.add_pershot_snapshot(name,
                                op.string_params[0],
                                creg_.register_hex());
+}
+
+
+template <class state_t>
+void State<state_t>::apply_save_expval(const Operations::Op &op,
+                                       ExperimentResult &result){
+  // Check empty edge case
+  if (op.params_expval_pauli.empty()) {
+    throw std::invalid_argument(
+        "Invalid save expval instruction (Pauli components are empty).");
+  }
+
+  // Accumulate expval components
+  complex_t expval(0., 0.);
+  for (const auto &param : op.params_expval_pauli) {
+    const auto &coeff = param.first;
+    const auto &pauli = param.second;
+    expval += coeff * pauli_expval(op.qubits, pauli);
+  }
+
+  // Add to result
+  save_data_average(result, op.string_params[0], expval, op.save_type);
 }
 
 

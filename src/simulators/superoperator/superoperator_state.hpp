@@ -145,6 +145,14 @@ protected:
                      const double lambda);
 
   //-----------------------------------------------------------------------
+  // Save data instructions
+  //-----------------------------------------------------------------------
+
+  // Helper function for computing expectation value
+  virtual double pauli_expval(const reg_t &qubits,
+                              const std::string& pauli) override;
+    
+  //-----------------------------------------------------------------------
   // Config Settings
   //-----------------------------------------------------------------------
 
@@ -475,6 +483,12 @@ void State<data_t>::apply_snapshot(const Operations::Op &op,
         "QubitSuperoperator::State::invalid snapshot instruction \'" + op.name +
         "\'.");
   }
+}
+
+template <class data_t>
+double  State<data_t>::pauli_expval(const reg_t &qubits,
+                                    const std::string& pauli) {
+  throw std::runtime_error("SuperOp simulator does not support Pauli expectation values.");
 }
 
 //------------------------------------------------------------------------------

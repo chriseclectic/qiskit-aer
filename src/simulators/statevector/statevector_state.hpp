@@ -38,7 +38,8 @@ const Operations::OpSet StateOpSet(
      Operations::OpType::snapshot, Operations::OpType::barrier,
      Operations::OpType::bfunc, Operations::OpType::roerror,
      Operations::OpType::matrix, Operations::OpType::diagonal_matrix,
-     Operations::OpType::multiplexer, Operations::OpType::kraus},
+     Operations::OpType::multiplexer, Operations::OpType::kraus,
+     Operations::OpType::save_expval},
     // Gates
     {"u1",     "u2",      "u3",  "u",    "U",    "CX",   "cx",   "cz",
      "cy",     "cp",      "cu1", "cu2",  "cu3",  "swap", "id",   "p",
@@ -194,6 +195,14 @@ protected:
   // Apply a Kraus error operation
   void apply_kraus(const reg_t &qubits, const std::vector<cmatrix_t> &krausops,
                    RngEngine &rng);
+
+  //-----------------------------------------------------------------------
+  // Save data instructions
+  //-----------------------------------------------------------------------
+
+  // Helper function for computing expectation value
+  virtual double pauli_expval(const reg_t &qubits,
+                              const std::string& pauli) override;
 
   //-----------------------------------------------------------------------
   // Measurement Helpers
@@ -515,12 +524,25 @@ void State<statevec_t>::apply_ops(const std::vector<Operations::Op> &ops,
         case Operations::OpType::kraus:
           apply_kraus(op.qubits, op.mats, rng);
           break;
+        case Operations::OpType::save_expval:
+          BaseState::apply_save_expval(op, result);
+          break;
         default:
           throw std::invalid_argument(
               "QubitVector::State::invalid instruction \'" + op.name + "\'.");
         }
     }
   }
+}
+
+//=========================================================================
+// Implementation: Save data
+//=========================================================================
+
+template <class statevec_t>
+double State<statevec_t>::pauli_expval(const reg_t &qubits,
+                                       const std::string& pauli) {
+  return BaseState::qreg_.expval_pauli(qubits, pauli);
 }
 
 //=========================================================================
@@ -621,7 +643,7 @@ void State<statevec_t>::snapshot_pauli_expval(const Operations::Op &op,
   for (const auto &param : op.params_expval_pauli) {
     const auto &coeff = param.first;
     const auto &pauli = param.second;
-    expval += coeff * BaseState::qreg_.expval_pauli(op.qubits, pauli);
+    expval += coeff * pauli_expval(op.qubits, pauli);
   }
 
   // Add to snapshot

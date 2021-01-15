@@ -37,9 +37,17 @@ enum class RegComparison {Equal, NotEqual, Less, LessEqual, Greater, GreaterEqua
 // Enum class for operation types
 enum class OpType {
   gate, measure, reset, bfunc, barrier, snapshot,
-  matrix, diagonal_matrix, multiplexer, kraus, superop, roerror,
-  noise_switch, initialize, nop
+  matrix, diagonal_matrix, multiplexer, initialize, nop,
+  // Noise instructions
+  kraus, superop, roerror, noise_switch,
+  // Save instructions
+  save_expval
 };
+
+enum class DataSubType {
+  single, list, c_list, accum, c_accum, average, c_average
+};
+
 
 inline std::ostream& operator<<(std::ostream& stream, const OpType& type) {
   switch (type) {
@@ -57,6 +65,9 @@ inline std::ostream& operator<<(std::ostream& stream, const OpType& type) {
     break;
   case OpType::barrier:
     stream << "barrier";
+    break;
+  case OpType::save_expval:
+    stream << "save_expval";
     break;
   case OpType::snapshot:
     stream << "snapshot";
@@ -128,7 +139,8 @@ struct Op {
   // Readout error
   std::vector<rvector_t> probs;
 
-  // Snapshots
+  // Save data and snapshots
+  DataSubType save_type = DataSubType::single;
   using pauli_component_t = std::pair<complex_t, std::string>; // Pair (coeff, label_string)
   using matrix_component_t = std::pair<complex_t, std::vector<std::pair<reg_t, cmatrix_t>>>; // vector of Pair(qubits, matrix), combined with coefficient
   std::vector<pauli_component_t> params_expval_pauli;
@@ -397,6 +409,10 @@ Op json_to_op_bfunc(const json_t &js);
 Op json_to_op_initialize(const json_t &js);
 Op json_to_op_pauli(const json_t &js);
 
+// Save data
+Op json_to_op_save_default(const json_t &js);
+Op json_to_op_save_expval(const json_t &js);
+
 // Snapshots
 Op json_to_op_snapshot(const json_t &js);
 Op json_to_op_snapshot_default(const json_t &js);
@@ -446,6 +462,9 @@ Op json_to_op(const json_t &js) {
     return json_to_op_diagonal(js);
   if (name == "superop")
     return json_to_op_superop(js);
+  // Save
+  if (name == "save_expval")
+    return json_to_op_save_expval(js);
   // Snapshot
   if (name == "snapshot")
     return json_to_op_snapshot(js);
@@ -830,6 +849,104 @@ Op json_to_op_noise_switch(const json_t &js) {
 }
 
 //------------------------------------------------------------------------------
+// Implementation: Save data deserialization
+//------------------------------------------------------------------------------
+
+Op json_to_op_save_default(const json_t &js) {
+  Op op;
+
+  // Get type
+  const std::unordered_map<std::string, OpType> datatypes {
+    {"expval", OpType::save_expval}
+  };
+  JSON::get_value(op.name, "name", js);
+  std::string datatype = op.name.substr(5); // delete "data_"
+  auto type_it = datatypes.find(datatype);
+  if (type_it == datatypes.end()) {
+    throw std::runtime_error("Invalid data type \"" + datatype +
+                             "\" in save data instruction.");
+  }
+  op.type = type_it->second;
+
+  // Get subtype
+  const std::unordered_map<std::string, DataSubType> subtypes {
+    {"single", DataSubType::single},
+    {"average", DataSubType::average},
+    {"c_average", DataSubType::c_average},
+    {"list", DataSubType::list},
+    {"c_list", DataSubType::c_list},
+    {"accum", DataSubType::accum},
+    {"c_accum", DataSubType::c_accum},
+  };
+  std::string subtype;
+  JSON::get_value(subtype, "snapshot_type", js);
+  auto subtype_it = subtypes.find(subtype);
+  if (subtype_it == subtypes.end()) {
+    throw std::runtime_error("Invalid data subtype \"" + subtype +
+                             "\" in save data instruction.");
+  }
+  op.save_type = subtype_it->second;
+ 
+  // Get data key
+  op.string_params.emplace_back("");
+  JSON::get_value(op.string_params[0], "label", js);
+
+  // Add optional qubits field
+  JSON::get_value(op.qubits, "qubits", js);
+  return op;
+}
+
+
+void add_pauli_expval_params(Op& op, const json_t &js) {
+
+  // Parse Pauli operator components
+  const auto threshold = 1e-15; // drop small components
+  // Get components
+  if (JSON::check_key("params", js) && js["params"].is_array()) {
+    for (const auto &comp : js["params"]) {
+      // Check component is length-2 array
+      if (!comp.is_array() || comp.size() != 2)
+        throw std::invalid_argument("Invalid expval params (param component " + 
+                                    comp.dump() + " invalid).");
+      // Get complex coefficient
+      complex_t coeff = comp[0];
+      // If coefficient is above threshold, get the Pauli operator string
+      // This string may contain I, X, Y, Z
+      // qubits are stored as a list where position is qubit number:
+      // eq op.qubits = [a, b, c], a is qubit-0, b is qubit-1, c is qubit-2
+      // Pauli string labels are stored in little-endian ordering:
+      // eg label = "CBA", A is the Pauli for qubit-0, B for qubit-1, C for qubit-2
+      if (std::abs(coeff) > threshold) {
+        std::string pauli = comp[1];
+        if (pauli.size() != op.qubits.size()) {
+          throw std::invalid_argument(std::string("Invalid expectation value save instruction ") +
+                                      "(Pauli label does not match qubit number.).");
+        }
+        // make tuple and add to components
+        op.params_expval_pauli.emplace_back(coeff, pauli);
+      } // end if > threshold
+    } // end component loop
+  } else {
+    throw std::invalid_argument("Invalid save expectation value \"params\".");
+  }
+  // Check edge case of all coefficients being empty
+  // In this case the operator had all coefficients zero, or sufficiently close
+  // to zero that they were all truncated.
+  if (op.params_expval_pauli.empty()) {
+    // Add a single identity op with zero coefficient
+    std::string pauli(op.qubits.size(), 'I');
+    complex_t coeff(0);
+    op.params_expval_pauli.emplace_back(coeff, pauli);
+  }
+}
+
+Op json_to_op_save_expval(const json_t &js) {
+  Op op = json_to_op_save_default(js);
+  add_pauli_expval_params(op, js);
+  return op;
+}
+
+//------------------------------------------------------------------------------
 // Implementation: Snapshot deserialization
 //------------------------------------------------------------------------------
 
@@ -887,52 +1004,8 @@ Op json_to_op_snapshot_amplitudes(const json_t &js) {
 
 
 Op json_to_op_snapshot_pauli(const json_t &js) {
-  // Load default snapshot parameters
   Op op = json_to_op_snapshot_default(js);
-
-  // Check qubits are valid
-  check_empty_qubits(op);
-  check_duplicate_qubits(op);
-
-  // Parse Pauli operator components
-  const auto threshold = 1e-15; // drop small components
-  // Get components
-  if (JSON::check_key("params", js) && js["params"].is_array()) {
-    for (const auto &comp : js["params"]) {
-      // Check component is length-2 array
-      if (!comp.is_array() || comp.size() != 2)
-        throw std::invalid_argument("Invalid Pauli expval snapshot (param component " + 
-                                    comp.dump() + " invalid).");
-      // Get complex coefficient
-      complex_t coeff = comp[0];
-      // If coefficient is above threshold, get the Pauli operator string
-      // This string may contain I, X, Y, Z
-      // qubits are stored as a list where position is qubit number:
-      // eq op.qubits = [a, b, c], a is qubit-0, b is qubit-1, c is qubit-2
-      // Pauli string labels are stored in little-endian ordering:
-      // eg label = "CBA", A is the Pauli for qubit-0, B for qubit-1, C for qubit-2
-      if (std::abs(coeff) > threshold) {
-        std::string pauli = comp[1];
-        if (pauli.size() != op.qubits.size()) {
-          throw std::invalid_argument(std::string("Invalid Pauli expectation value snapshot ") +
-                                      "(Pauli label does not match qubit number.).");
-        }
-        // make tuple and add to components
-        op.params_expval_pauli.emplace_back(coeff, pauli);
-      } // end if > threshold
-    } // end component loop
-  } else {
-    throw std::invalid_argument("Invalid Pauli snapshot \"params\".");
-  }
-  // Check edge case of all coefficients being empty
-  // In this case the operator had all coefficients zero, or sufficiently close
-  // to zero that they were all truncated.
-  if (op.params_expval_pauli.empty()) {
-    // Add a single identity op with zero coefficient
-    std::string pauli(op.qubits.size(), 'I');
-    complex_t coeff(0);
-    op.params_expval_pauli.emplace_back(coeff, pauli);
-  }
+  add_pauli_expval_params(op, js);
   return op;
 }
 
