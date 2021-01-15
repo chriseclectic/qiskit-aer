@@ -293,7 +293,7 @@ class QasmSimulator(AerBackend):
             'mcp', 'mcu1', 'mcu2', 'mcu3', 'mcrx', 'mcry', 'mcrz',
             'mcr', 'mcswap', 'unitary', 'diagonal', 'multiplexer',
             'initialize', 'kraus', 'roerror', 'delay', 'pauli',
-            'save_expval'
+            'save_expval', 'save_statevector'
         ],
         'gates': []
     }
@@ -452,7 +452,8 @@ class QasmSimulator(AerBackend):
             config.basis_gates = [
                 'u1', 'u2', 'u3', 'u', 'p', 'cp', 'cx', 'cz', 'id', 'x', 'y', 'z', 'h', 's',
                 'sdg', 'sx', 't', 'tdg', 'swap', 'ccx', 'unitary', 'roerror', 'delay',
-                'r', 'rx', 'ry', 'rz', 'rxx', 'ryy', 'rzz', 'rzx', 'save_expval'
+                'r', 'rx', 'ry', 'rz', 'rxx', 'ryy', 'rzz', 'rzx', 'save_expval',
+                'save_statevector'
             ]
 
         # Stabilizer method
@@ -470,7 +471,8 @@ class QasmSimulator(AerBackend):
             config.description = 'A C++ QasmQobj ranked stabilizer simulator with noise'
             config.basis_gates = [
                 'cx', 'cz', 'id', 'x', 'y', 'z', 'h', 's', 'sdg', 'sx', 'swap',
-                'u0', 'u1', 'p', 'ccx', 'ccz', 'roerror', 'delay'
+                'u0', 'u1', 'p', 'ccx', 'ccz', 'roerror', 'delay',
+                'save_statevec'
             ]
 
         return config

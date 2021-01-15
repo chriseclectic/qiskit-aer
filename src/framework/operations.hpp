@@ -41,7 +41,7 @@ enum class OpType {
   // Noise instructions
   kraus, superop, roerror, noise_switch,
   // Save instructions
-  save_expval
+  save_expval, save_statevec
 };
 
 enum class DataSubType {
@@ -68,6 +68,9 @@ inline std::ostream& operator<<(std::ostream& stream, const OpType& type) {
     break;
   case OpType::save_expval:
     stream << "save_expval";
+    break;
+  case OpType::save_statevec:
+    stream << "save_statevector";
     break;
   case OpType::snapshot:
     stream << "snapshot";
@@ -857,7 +860,8 @@ Op json_to_op_save_default(const json_t &js) {
 
   // Get type
   const std::unordered_map<std::string, OpType> datatypes {
-    {"expval", OpType::save_expval}
+    {"expval", OpType::save_expval},
+    {"statevector", OpType::save_statevec}
   };
   JSON::get_value(op.name, "name", js);
   std::string datatype = op.name.substr(5); // delete "data_"
