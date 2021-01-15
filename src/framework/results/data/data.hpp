@@ -24,6 +24,7 @@
 
 // Data Containers
 #include "framework/results/data/mixins/data_creg.hpp"
+#include "framework/results/data/mixins/data_cvalue.hpp"
 #include "framework/results/data/mixins/data_cmatrix.hpp"
 #include "framework/results/data/mixins/data_cvector.hpp"
 
@@ -34,6 +35,7 @@ namespace AER {
 //============================================================================
 
 struct Data : public DataCReg,
+              public DataCValue,
               public DataCVector,
               public DataCMatrix {
 
@@ -124,6 +126,7 @@ struct Data : public DataCReg,
 //------------------------------------------------------------------------------
 
 Data &Data::combine(Data &&other) {
+  DataCValue::combine(std::move(other));
   DataCVector::combine(std::move(other));
   DataCMatrix::combine(std::move(other));
   DataCReg::combine(std::move(other));
@@ -132,6 +135,7 @@ Data &Data::combine(Data &&other) {
 
 json_t Data::to_json() {
   json_t result;
+  DataCValue::add_to_json(result);
   DataCVector::add_to_json(result);
   DataCMatrix::add_to_json(result);
   DataCReg::add_to_json(result);
