@@ -54,8 +54,18 @@ def snapshot_amplitudes(self, label, params):
     Raises:
         ExtensionError: if snapshot is invalid.
 
-    Additional Information:
-        This snapshot is always performed on all qubits in a circuit.
+    .. note:
+
+        This instruction is always defined across all qubits in a circuit.
+
+    .. note ::
+
+        In cetain cases the list returned by ``pershot=True`` may only
+        contain a single value, rather than the number of shots. This
+        happens when running an ideal simulation on a circuit that supports
+        measurement sampling because it has measurements at the end. In
+        this case only a single shot is simulated and measurement samples
+        for all shots are calculated from the final state.
     """
     snapshot_register = Snapshot.define_snapshot_register(self)
 
